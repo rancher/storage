@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+ARCH=${ARCH:?"ARCH not set"}
+SUFFIX=""
+[ "${ARCH}" != "amd64" ] && SUFFIX="_${ARCH}"
+
+source $(dirname $0)/version
+
+cd $(dirname $0)/../package
+
+TAG=${TAG:-${VERSION}${SUFFIX}}
+REPO=${REPO:-rancher}
+
+cp ../bin/docker-volume-exec .
+docker build -t ${REPO}/docker-volume-exec:${TAG} .
+
+echo Built ${REPO}/docker-volume-exec:${TAG}
