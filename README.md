@@ -1,7 +1,7 @@
-docker-volume-exec
-========
+Rancher Storage
+==============
 
-A microservice that does micro things.
+This repo contains Rancher specific storage plugins
 
 ## Building
 
@@ -10,7 +10,7 @@ A microservice that does micro things.
 
 ## Running
 
-`./bin/docker-volume-exec`
+Add this repo as a catalog in Rancher to run the local builds
 
 ## License
 Copyright (c) 2014-2016 [Rancher Labs, Inc.](http://rancher.com)

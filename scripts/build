@@ -7,4 +7,4 @@ cd $(dirname $0)/..
 
 mkdir -p bin
 [ "$(uname)" != "Darwin" ] && LINKFLAGS="-linkmode external -extldflags -static -s"
-go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/docker-volume-exec
+go build -ldflags "-X main.VERSION=$VERSION $LINKFLAGS" -o bin/storage

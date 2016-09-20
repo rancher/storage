@@ -9,6 +9,12 @@ GIT_TAG=$(git tag -l --contains HEAD | head -n 1)
 
 if [[ -z "$DIRTY" && -n "$GIT_TAG" ]]; then
     VERSION=$GIT_TAG
+    IMAGE_VERSION=${VERSION}
 else
     VERSION="${COMMIT}${DIRTY}"
+    IMAGE_VERSION=dev
+fi
+
+if [ -z "$ARCH" ]; then
+    ARCH=amd64
 fi
