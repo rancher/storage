@@ -1,0 +1,293 @@
+#!/bin/bash
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+WAIT_SLEEP_TIME_IN_SECONDS=2
+
+usage() {
+    err "Invalid usage. Usage: "
+    err "\t$0 create <json params>"
+    err "\t$0 delete <json params>"
+    err "\t$0 attach <json params>"
+    err "\t$0 detach <json params>"
+    err "\t$0 mount <mount dir> <json params>"
+    err "\t$0 unmount <mount dir> <json params>"
+    exit 1
+}
+
+err() {
+    echo -ne $@ 1>&2
+}
+
+log() {
+    echo -ne $@ >&1
+}
+
+get_meta_data() {
+    EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null`
+    EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
+    INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null`
+    instances=`aws ec2 describe-instances --instance-ids ${INSTANCE_ID}`
+    SUBNET_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SubnetId'`
+    SECURITY_GROUP_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SecurityGroups[0].GroupId'`
+    EFS_DNS_NAME=${EC2_AVAIL_ZONE}.${FSID}.efs.${EC2_REGION}.amazonaws.com
+}
+
+ismounted() {
+    local mountPoint=$1
+    local mountP=`findmnt -n ${mountPoint} 2>/dev/null | cut -d' ' -f1`
+    if [ "${mountP}" == "${mountPoint}" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
+wait_fs_transition() {
+    local current_state=$1
+    local start_state=$1
+    local end_state=$2
+    while [ "${current_state}" == "${start_state}" ]; do
+        sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
+        local fileSystems=`aws efs describe-file-systems --file-system-id ${FSID} 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
+            exit 1
+        fi
+        current_state=$(echo ${fileSystems} | jq -r '.FileSystems[0].LifeCycleState')
+    done
+    if [ "${current_state}" != "${end_state}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed fs ${FSID} transition, expected end state is: ${end_state}, got ${current_state}\"}"
+        exit 1
+    fi
+
+}
+
+wait_mount_target_transition() {
+    local current_state=$1
+    local start_state=$1
+    local end_state=$2
+    while [ "${current_state}" == "${start_state}" ]; do
+        sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
+        local mountTargets=`aws efs describe-mount-targets --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed to describe mount target ${MOUNT_TARGET_ID}: ${mountTargets}\"}"
+            exit 1
+        fi
+        current_state=$(echo ${mountTargets} | jq -r '.MountTargets[0].LifeCycleState')
+    done
+    if [ "${current_state}" != "${end_state}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed mount target ${MOUNT_TARGET_ID} transition, expected end state is: ${end_state}, got ${current_state}\"}"
+        exit 1
+    fi
+
+}
+
+wait_mount_target_deleting() {
+    local num=1
+    while [ "${num}" == 1 ]; do
+        sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
+        local fileSystems=`aws efs describe-file-systems --file-system-id ${FSID} 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
+            exit 1
+        fi
+        num=$(echo ${fileSystems} | jq -r '.FileSystems[0].NumberOfMountTargets')
+    done
+}
+
+create() {
+    FSID=$(echo $1 | jq -r '.fsid')
+    if [ "${FSID}" != "null" ]; then
+        log "{\"status\": \"Success\",\"options\":{}}"
+        exit 0
+    fi
+
+    local creationToken=$(echo $1 | jq -r '.creationToken')
+    if [ "${creationToken}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"creationToken is missing, can't create\"}"
+        exit 1
+    fi
+    creationToken="--creation-token "${creationToken}
+
+    local name=$(echo $1 | jq -r '.name')
+    if [ "${name}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"name is missing, can't create\"}"
+        exit 1
+    fi
+
+    local performanceMode=$(echo $1 | jq -r '.performanceMode')
+    if [ "${performanceMode}" != "null" ]; then
+        performanceMode="--performance-mode "${performanceMode=}
+    fi
+
+    # create a EFS FS using aws-cli
+    local fs=`aws efs create-file-system ${creationToken} ${performanceMode} 2>&1`
+    if [ $? -ne 0 ]; then
+        # now fs is the error message
+        err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${fs}\"}"
+        exit 1
+    fi
+    FSID=$(echo ${fs} | jq -r '.FileSystemId')
+
+    wait_fs_transition "creating" "available"
+
+    get_meta_data
+
+    # create a mount target for the EFS
+    local fsMountTarget=`aws efs create-mount-target --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${SECURITY_GROUP_ID} 2>&1`
+    if [ $? -ne 0 ]; then
+        # now fs is the error message
+        err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${fsMountTarget}\"}"
+        exit 1
+    fi
+    MOUNT_TARGET_ID=$(echo ${fsMountTarget} | jq -r '.MountTargetId')
+
+    wait_mount_target_transition "creating" "available"
+
+    # tag the newly created volume
+    local error=`aws efs create-tags --file-system-id ${FSID} --tags Key=Name,Value=${name} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${name} failed. ${error}\"}"
+        exit 1
+    fi
+
+    log "{\"status\": \"Success\",\"options\":{\"created\":true,\"fsid\":\"${FSID}\",\"mountTargetId\":\"${MOUNT_TARGET_ID}\"}}"
+    exit 0
+}
+
+delete() {
+    local created=$(echo $1 | jq -r '.options.created')
+    if [ "${created}" == "null" ]; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
+
+    FSID=$(echo $1 | jq -r '.options.fsid')
+    if [ "${FSID}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"fsid is missing, can't delete\"}"
+        exit 1
+    fi
+
+    MOUNT_TARGET_ID=$(echo $1 | jq -r '.options.mountTargetId')
+    if [ "${MOUNT_TARGET_ID}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"mountTargetId is missing, can't delete\"}"
+        exit 1
+    fi
+
+    local error=`aws efs delete-mount-target --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to delete mount target ${MOUNT_TARGET_ID}. ${error}\"}"
+        exit 1
+    fi
+
+    wait_mount_target_deleting
+
+    local error=`aws efs delete-file-system --file-system-id ${FSID} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to delete volume ${FSID}. ${error}\"}"
+        exit 1
+    fi
+
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+attach() {
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+detach() {
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+domount() {
+    # $2 should be <mount device> if attach() return a device, otherwise, <json params> is $2
+    FSID=$(echo $2 | jq -r '.fsid')
+    local exportDir=$(echo $2 | jq -r '.export')
+
+    if [ "${FSID}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"fsid is missing, can not mount\"}"
+        exit 1
+    fi
+
+    if [ "${exportDir}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"export is missing, can not mount\"}"
+        exit 1
+    fi
+
+    local options=$(echo $2 | jq -r '.options')
+    if [ "${options}" != "null" ]; then
+        options="-o ${options}"
+    else
+        options="-o vers=4.1"
+    fi
+
+    local mntDest=$1
+    if [ $(ismounted "${mntDest}") == 1 ] ; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
+
+    get_meta_data
+
+    local error=`sudo mount -t nfs4 ${options} ${EFS_DNS_NAME}:${exportDir} ${mntDest} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to mount ${EFS_DNS_NAME}:${exportDir} at ${mntDest}. ${error}\"}"
+        exit 1
+    fi
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+unmount() {
+    local mntDest=$1
+    if [ $(ismounted "${mntDest}") == 0 ] ; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
+
+    local error=`sudo umount ${mntDest} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${mntDest}. ${error}\"}"
+        exit 1
+    fi
+
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+op=$1
+
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+shift
+
+case "$op" in
+    create)
+        create $@
+        ;;
+    delete)
+        delete $@
+        ;;
+    attach)
+        attach $@
+        ;;
+    detach)
+        detach $@
+        ;;
+    mount)
+        domount $@
+        ;;
+    unmount)
+        unmount $@
+        ;;
+    *)
+    usage
+esac
+
+exit 1
