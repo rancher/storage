@@ -1,0 +1,273 @@
+#!/bin/bash
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+WAIT_SLEEP_TIME_IN_SECONDS=2
+
+usage() {
+    err "Invalid usage. Usage: "
+    err "\t$0 create <json params>"
+    err "\t$0 delete <json params>"
+    err "\t$0 attach <json params>"
+    err "\t$0 detach <json params>"
+    err "\t$0 mount <mount dir> <json params>"
+    err "\t$0 unmount <mount dir> <json params>"
+    exit 1
+}
+
+err() {
+    echo -ne $@ 1>&2
+}
+
+log() {
+    echo -ne $@ >&1
+}
+
+ismounted() {
+    local mountPoint=$1
+    local mountP=`findmnt -n ${mountPoint} 2>/dev/null | cut -d' ' -f1`
+    if [ "${mountP}" == "${mountPoint}" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
+create() {
+    local host=$(echo $1 | jq -r '.host')
+    local exportDir=$(echo $1 | jq -r '.export')
+
+    # if user supplies host:export, we do nothing
+    if [ "${host}" != "null" ] && [ "${exportDir}" != "null" ]; then
+        log "{\"status\": \"Success\",\"options\":{}}"
+        exit 0
+    fi
+
+    # else we will create a sub-directory name representing volume in the remote share and
+    local mntDest=$(echo $1 | jq -r '.mntDest')
+    local name=$(echo $1 | jq -r '.name')
+
+    if [ "${name}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"name is missing, can not create\"}"
+        exit 1
+    fi
+    if [ "${mntDest}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"mntDest is missing, can not create\"}"
+        exit 1
+    fi
+
+    # get host:export from environment variables
+    if [ -z "${HOST}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"No host environment variable found\"}"
+        exit 1
+    else
+        host=${HOST}
+    fi
+
+    if [ -z "${EXPORT}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"No export environment variable found\"}"
+        exit 1
+    else
+        exportDir=${EXPORT}
+    fi
+
+    # mount remote share if not mounted already
+    if [ $(ismounted "${mntDest}") == 0 ] ; then
+        error=`sudo mount "${host}":"${exportDir}" "${mntDest}" 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${host}:${exportDir} ${mntDest}: ${error}\"}"
+            exit 1
+        fi
+    fi
+
+    # create sub-directory using name parameter to represent volume
+    local subDir="${mntDest}"/"${name}"
+    local created=0
+    if [ ! -d "${subDir}" ]; then
+        sudo mkdir -p "${subDir}"
+        created=1
+    fi
+
+    # now unmount
+    local error=`sudo umount ${mntDest} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed umount ${mntDest}: ${error}\"}"
+        exit 1
+    fi
+
+    if [ "${created}" == 1 ]; then
+        log "{\"status\":\"Success\",\"options\":{\"created\":true,\"name\":\"${name}\"}}"
+    else
+        log "{\"status\":\"Success\",\"options\":{}}"
+    fi
+    exit 0
+}
+
+delete() {
+    local created=$(echo $1 | jq -r '.options.created')
+    if [ "${created}" == "null" ]; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
+
+    local name=$(echo $1 | jq -r '.options.name')
+    if [ "${VOLUME_ID}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"name is missing, can't delete\"}"
+        exit 1
+    fi
+
+    local mntDest=$(echo $1 | jq -r '.mntDest')
+    if [ "${mntDest}" == "null" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"mntDest is missing, can't create\"}"
+        exit 1
+    fi
+
+    # get host:export from environment variables
+    if [ -z "${HOST}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"No host environment variable found\"}"
+        exit 1
+    else
+        host=${HOST}
+    fi
+
+    if [ -z "${EXPORT}" ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"No export environment variable found\"}"
+        exit 1
+    else
+        exportDir=${EXPORT}
+    fi
+
+    # mount remote share if not mounted already
+    if [ $(ismounted "${mntDest}") == 0 ] ; then
+        error=`sudo mount "${host}":"${exportDir}" "${mntDest}" 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${host}:${exportDir} ${mntDest}: ${error}\"}"
+            exit 1
+        fi
+    fi
+
+    # delete sub-directory using name parameter to represent volume
+    local subDir="${mntDest}"/"${name}"
+    if [ -d "$subDir" ]; then
+        sudo rm -rf "${subDir}"
+    fi
+
+    # now unmount
+    local error=`sudo umount "${mntDest}" 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed umount ${mntDest}: ${error}\"}"
+        exit 1
+    fi
+
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+attach() {
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+detach() {
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
+
+domount() {
+    local mntDest=$1
+    local host=$(echo $2 | jq -r '.host')
+    local exportDir=$(echo $2 | jq -r '.export')
+    local mntOptions=$(echo $2 | jq -r '.mntOptions')
+    local name=$(echo $2 | jq -r '.name')
+
+    if [ "${mntOptions}" != "null" ]; then
+        mntOptions="-o "${mntOptions}
+    else
+        mntOptions=""
+    fi
+
+    local mntSrc="${host}":"${exportDir}"
+
+    # if user does not supply host:export, we will mount remote share host:export/name to mntDst
+    if [ "${host}" == "null" ] || [ "${exportDir}" == "null" ]; then
+        # get host:export from environment variables
+        if [ -z "${HOST}" ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"No host environment variable found\"}"
+            exit 1
+        else
+            host=${HOST}
+        fi
+
+        if [ -z "${EXPORT}" ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"No export environment variable found\"}"
+            exit 1
+        else
+            exportDir=${EXPORT}
+        fi
+
+        if [ "${name}" == "null" ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"name is missing, can't mount\"}"
+            exit 1
+        fi
+        mntSrc="${host}":"${exportDir}"/"${name}"
+    fi
+
+    # mount remote share if not mounted already
+    if [ $(ismounted "${mntDest}") == 0 ] ; then
+        error=`sudo mount ${mntOptions} ${mntSrc} ${mntDest} 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${mntOptions} ${mntSrc} ${mntDest}: ${error}\"}"
+            exit 1
+        fi
+    fi
+
+
+    log "{\"status\": \"Success\"}"
+    exit 1
+}
+
+unmount() {
+    local mntDest=$1
+    if [ $(ismounted "${mntDest}") == 1 ] ; then
+        error=`sudo umount "${mntDest}" 2>&1`
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed umount ${mntDest}: ${error}\"}"
+            exit 1
+        fi
+    fi
+    log "{\"status\": \"Success\"}"
+    exit 1
+}
+
+op=$1
+
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+shift
+
+case "$op" in
+    create)
+        create $@
+        ;;
+    delete)
+        delete $@
+        ;;
+    attach)
+        attach $@
+        ;;
+    detach)
+        detach $@
+        ;;
+    mount)
+        domount $@
+        ;;
+    unmount)
+        unmount $@
+        ;;
+    *)
+    usage
+esac
+
+exit 1
