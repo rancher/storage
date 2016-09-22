@@ -73,6 +73,7 @@ create() {
 
     # mount remote share if not mounted already
     if [ $(ismounted "${mntDest}") == 0 ] ; then
+        sudo mkdir -p "${mntDest}"
         error=`sudo mount "${host}":"${exportDir}" "${mntDest}" 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${host}:${exportDir} ${mntDest}: ${error}\"}"
@@ -139,6 +140,7 @@ delete() {
 
     # mount remote share if not mounted already
     if [ $(ismounted "${mntDest}") == 0 ] ; then
+        sudo mkdir -p "${mntDest}"
         error=`sudo mount "${host}":"${exportDir}" "${mntDest}" 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${host}:${exportDir} ${mntDest}: ${error}\"}"
@@ -164,12 +166,12 @@ delete() {
 }
 
 attach() {
-    log "{\"status\": \"Success\"}"
+    log "{\"status\": \"Not supported\"}"
     exit 0
 }
 
 detach() {
-    log "{\"status\": \"Success\"}"
+    log "{\"status\": \"Not supported\"}"
     exit 0
 }
 
@@ -214,6 +216,7 @@ domount() {
 
     # mount remote share if not mounted already
     if [ $(ismounted "${mntDest}") == 0 ] ; then
+        sudo mkdir -p "${mntDest}"
         error=`sudo mount ${mntOptions} ${mntSrc} ${mntDest} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed mount ${mntOptions} ${mntSrc} ${mntDest}: ${error}\"}"
