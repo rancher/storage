@@ -194,12 +194,12 @@ delete() {
 }
 
 attach() {
-    log "{\"status\": \"Success\"}"
+    log "{\"status\": \"Not supported\"}"
     exit 0
 }
 
 detach() {
-    log "{\"status\": \"Success\"}"
+    log "{\"status\": \"Not supported\"}"
     exit 0
 }
 
@@ -218,11 +218,11 @@ domount() {
         exit 1
     fi
 
-    local options=$(echo $2 | jq -r '.options')
-    if [ "${options}" != "null" ]; then
-        options="-o ${options}"
+    local mntOptions=$(echo $2 | jq -r '.mntOptions')
+    if [ "${mntOptions}" != "null" ]; then
+        mntOptions="-o ${mntOptions}"
     else
-        options="-o vers=4.1"
+        mntOptions="-o vers=4.1"
     fi
 
     local mntDest=$1
@@ -233,7 +233,7 @@ domount() {
 
     get_meta_data
 
-    local error=`sudo mount -t nfs4 ${options} ${EFS_DNS_NAME}:${exportDir} ${mntDest} 2>&1`
+    local error=`sudo mount -t nfs4 ${mntOptions} ${EFS_DNS_NAME}:${exportDir} ${mntDest} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to mount ${EFS_DNS_NAME}:${exportDir} at ${mntDest}. ${error}\"}"
         exit 1
