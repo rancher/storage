@@ -25,12 +25,11 @@ log() {
 
 get_meta_data() {
     EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null`
-    EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
+    EC2_REGION="`echo \"${EC2_AVAIL_ZONE}\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
     INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null`
-    instances=`aws ec2 describe-instances --instance-ids ${INSTANCE_ID}`
+    local instances=`aws ec2 describe-instances --region ${EC2_REGION} --instance-ids ${INSTANCE_ID}`
     SUBNET_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SubnetId'`
     SECURITY_GROUP_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SecurityGroups[0].GroupId'`
-    EFS_DNS_NAME=${EC2_AVAIL_ZONE}.${FSID}.efs.${EC2_REGION}.amazonaws.com
 }
 
 ismounted() {
@@ -49,7 +48,7 @@ wait_fs_transition() {
     local end_state=$2
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local fileSystems=`aws efs describe-file-systems --file-system-id ${FSID} 2>&1`
+        local fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
             exit 1
@@ -69,7 +68,7 @@ wait_mount_target_transition() {
     local end_state=$2
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local mountTargets=`aws efs describe-mount-targets --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+        local mountTargets=`aws efs describe-mount-targets --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe mount target ${MOUNT_TARGET_ID}: ${mountTargets}\"}"
             exit 1
@@ -87,7 +86,7 @@ wait_mount_target_deleting() {
     local num=1
     while [ "${num}" == 1 ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local fileSystems=`aws efs describe-file-systems --file-system-id ${FSID} 2>&1`
+        local fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
             exit 1
@@ -118,11 +117,15 @@ create() {
 
     local performanceMode=$(echo $1 | jq -r '.performanceMode')
     if [ "${performanceMode}" != "null" ]; then
-        performanceMode="--performance-mode "${performanceMode=}
+        performanceMode="--performance-mode "${performanceMode}
+    else
+        performanceMode=""
     fi
 
+    get_meta_data
+
     # create a EFS FS using aws-cli
-    local fs=`aws efs create-file-system ${creationToken} ${performanceMode} 2>&1`
+    local fs=`aws efs create-file-system --region ${EC2_REGION} ${creationToken} ${performanceMode} 2>&1`
     if [ $? -ne 0 ]; then
         # now fs is the error message
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${fs}\"}"
@@ -132,10 +135,8 @@ create() {
 
     wait_fs_transition "creating" "available"
 
-    get_meta_data
-
     # create a mount target for the EFS
-    local fsMountTarget=`aws efs create-mount-target --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${SECURITY_GROUP_ID} 2>&1`
+    local fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${SECURITY_GROUP_ID} 2>&1`
     if [ $? -ne 0 ]; then
         # now fs is the error message
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${fsMountTarget}\"}"
@@ -146,7 +147,7 @@ create() {
     wait_mount_target_transition "creating" "available"
 
     # tag the newly created volume
-    local error=`aws efs create-tags --file-system-id ${FSID} --tags Key=Name,Value=${name} 2>&1`
+    local error=`aws efs create-tags --region ${EC2_REGION} --file-system-id ${FSID} --tags Key=Name,Value=${name} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${name} failed. ${error}\"}"
         exit 1
@@ -175,7 +176,9 @@ delete() {
         exit 1
     fi
 
-    local error=`aws efs delete-mount-target --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+    get_meta_data
+
+    local error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to delete mount target ${MOUNT_TARGET_ID}. ${error}\"}"
         exit 1
@@ -183,7 +186,7 @@ delete() {
 
     wait_mount_target_deleting
 
-    local error=`aws efs delete-file-system --file-system-id ${FSID} 2>&1`
+    local error=`aws efs delete-file-system --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to delete volume ${FSID}. ${error}\"}"
         exit 1
@@ -233,6 +236,8 @@ domount() {
 
     get_meta_data
 
+    EFS_DNS_NAME=${EC2_AVAIL_ZONE}.${FSID}.efs.${EC2_REGION}.amazonaws.com
+    sudo mkdir -p "${mntDest}"
     local error=`sudo mount -t nfs4 ${mntOptions} ${EFS_DNS_NAME}:${exportDir} ${mntDest} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to mount ${EFS_DNS_NAME}:${exportDir} at ${mntDest}. ${error}\"}"

@@ -55,7 +55,8 @@ mntOptions key-value pair is optional for mount, but fsid and export are the mus
 stdout output: {"status":"Success"}
 ```
 
-The result is that us-west-2b.fs-90d12d39.efs.us-west-2.amazonaws.com://test is mounted to /home/ubuntu/efsMnt
+The result is that us-west-2b.fs-90d12d39.efs.us-west-2.amazonaws.com://test is mounted to /home/ubuntu/efsMnt.
+Here we assume user's EFS file system already has a directory called test created before.
 
 #### Unmount command
 driver unmount EFS file system
@@ -94,7 +95,7 @@ stdout output: {"status":"Success"}
 ```
 
 #### Mount command
-driver mounts EFS using either pre-existing fsid or fsid created at create command phase
+driver mounts EFS using fsid created at create command phase
 
 ```
 ./efs mount /home/ubuntu/efsMnt '{"fsid":"fs-b59c621c","export":"/","mntOptions":"ro,vers=4.1"}'
@@ -104,7 +105,7 @@ mntOptions key-value pair is optional for mount, but fsid and export are the mus
 stdout output: {"status":"Success"}
 ```
 
-The result is that us-west-2b.fs-b59c621c.efs.us-west-2.amazonaws.com://test is mounted to /home/ubuntu/efsMnt
+The result is that us-west-2b.fs-b59c621c.efs.us-west-2.amazonaws.com:/ is mounted to /home/ubuntu/efsMnt
 
 #### Unmount command
 driver unmount EFS file system

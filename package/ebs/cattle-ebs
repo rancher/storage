@@ -35,7 +35,7 @@ wait_volume_transition() {
     local end_state=$2
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local volumes=`aws ec2 describe-volumes --volume-ids ${VOLUME_ID} 2>&1`
+        local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe volume ${VOLUME_ID}: ${volumes}\"}"
             exit 1
@@ -53,7 +53,7 @@ wait_volume_attaching() {
     local attach_state="attaching"
     while [ "$attach_state" == "attaching" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local volumes=`aws ec2 describe-volumes --volume-ids ${VOLUME_ID} 2>&1`
+        local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe volume ${VOLUME_ID}: ${volumes}\"}"
             exit 1
@@ -67,7 +67,7 @@ wait_volume_attaching() {
 }
 
 detach_if_attached(){
-    local volumes=`aws ec2 describe-volumes --volume-ids ${VOLUME_ID} 2>&1`
+    local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed in attach: ${volumes}\"}"
         exit 1
@@ -78,7 +78,7 @@ detach_if_attached(){
 
     # check if volumeID is already attached to another instance
     if [ "${attached_instance_id}" != "null" ]; then
-        local instance_status=`aws ec2 describe-instance-status --instance-ids ${attached_instance_id} 2>&1`
+        local instance_status=`aws ec2 describe-instance-status --region ${EC2_REGION} --instance-ids ${attached_instance_id} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed in attach: ${instance_status}\"}"
             exit 1
@@ -92,7 +92,7 @@ detach_if_attached(){
         fi
 
         # detach it from currently attached instance VM
-        local error=`aws ec2 detach-volume --volume-id ${VOLUME_ID} --instance-id ${attached_instance_id} 2>&1`
+        local error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${attached_instance_id} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to detach ebs volume-id ${VOLUME_ID} from instance-id ${attached_instance_id}. ${error}\"}"
             exit 1
@@ -102,7 +102,7 @@ detach_if_attached(){
 }
 
 find_available_device_path() {
-    local attachments=`aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
+    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to describe volume of instance-id ${INSTANCE_ID}. ${attachments}\"}"
         exit 1
@@ -172,7 +172,7 @@ create() {
     get_meta_data
 
     # create a EBS volume using aws-cli
-    local volume=`aws ec2 create-volume --size ${size} --region ${EC2_REGION} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} 2>&1`
+    local volume=`aws ec2 create-volume --region ${EC2_REGION} --size ${size} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} 2>&1`
     if [ $? -ne 0 ]; then
         # now volume is the error message
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${volume}\"}"
@@ -183,7 +183,7 @@ create() {
     wait_volume_transition "creating" "available"
 
     # tag the newly created volume
-    local error=`aws ec2 create-tags --resources ${VOLUME_ID} --tags Key=Name,Value=${name} 2>&1`
+    local error=`aws ec2 create-tags --region ${EC2_REGION} --resources ${VOLUME_ID} --tags Key=Name,Value=${name} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: create-tags for volume ${VOLUME_ID} Key=Name,Value=${name} failed. ${error}\"}"
         exit 1
@@ -206,7 +206,9 @@ delete() {
         exit 1
     fi
 
-    local volumes=`aws ec2 describe-volumes --volume-ids ${VOLUME_ID} 2>&1`
+    get_meta_data
+
+    local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to describe volume ${VOLUME_ID}: ${volumes}\"}"
         exit 1
@@ -218,7 +220,7 @@ delete() {
         exit 1
     fi
 
-    local error=`aws ec2 delete-volume --volume-id ${VOLUME_ID} 2>&1`
+    local error=`aws ec2 delete-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to delete volume ${VOLUME_ID}. ${error}\"}"
         exit 1
@@ -240,7 +242,7 @@ attach() {
 
     local device_path=$(find_available_device_path)
 
-    local error=`aws ec2 attach-volume --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
+    local error=`aws ec2 attach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}\"}"
         exit 1
@@ -261,7 +263,7 @@ detach() {
     get_meta_data
 
     # from device, get VOLUME_ID
-    local attachments=`aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
+    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to describe volume of instance-id ${INSTANCE_ID}. ${attachments}\"}"
         exit 1
@@ -276,7 +278,7 @@ detach() {
         exit 0
     fi
 
-    local error=`aws ec2 detach-volume --volume-id ${VOLUME_ID} 2>&1`
+    local error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed to detach ebs volume-id ${VOLUME_ID} from current instance. ${error}\"}"
         exit 1
