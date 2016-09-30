@@ -29,7 +29,7 @@ get_meta_data() {
     INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null`
     local instances=`aws ec2 describe-instances --region ${EC2_REGION} --instance-ids ${INSTANCE_ID}`
     SUBNET_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SubnetId'`
-    SECURITY_GROUP_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].SecurityGroups[0].GroupId'`
+    VPC_ID=`echo "${instances}" | jq -r '.Reservations[0].Instances[0].VpcId'`
 }
 
 ismounted() {
@@ -117,7 +117,7 @@ create() {
 
     local performanceMode=$(echo $1 | jq -r '.performanceMode')
     if [ "${performanceMode}" != "null" ]; then
-        performanceMode="--performance-mode "${performanceMode}
+        performanceMode="--performance-mode ${performanceMode}"
     else
         performanceMode=""
     fi
@@ -135,8 +135,26 @@ create() {
 
     wait_fs_transition "creating" "available"
 
+    # create a security group for mount target
+    local description="From cattle EFS driver, SG for mount target of EFS: ${FSID}"
+    local groupName="SG-Mount-Target-EFS-${FSID}"
+    local mtSG=`aws ec2 create-security-group --region ${EC2_REGION} --vpc-id ${VPC_ID} --group-name ${groupName} --description "${description}" 2>&1`
+    if [ $? -ne 0 ]; then
+        # now fs is the error message
+        err "{ \"status\": \"Failure\", \"message\": \"Failed in create: create-security-group. ${mtSG}\"}"
+        exit 1
+    fi
+    mountTargetSGID=$(echo ${mtSG} | jq -r '.GroupId')
+
+    # open NFS4.1 port 2049 on the security group just created
+    local error=`aws ec2 authorize-security-group-ingress --region ${EC2_REGION} --group-id ${mountTargetSGID} --protocol tcp --port 2049 --cidr 0.0.0.0/0 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed in create: authorize-security-group-ingress for SG ${mountTargetSGID}. ${error}\"}"
+        exit 1
+    fi
+
     # create a mount target for the EFS
-    local fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${SECURITY_GROUP_ID} 2>&1`
+    local fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${mountTargetSGID} 2>&1`
     if [ $? -ne 0 ]; then
         # now fs is the error message
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: ${fsMountTarget}\"}"
@@ -147,13 +165,13 @@ create() {
     wait_mount_target_transition "creating" "available"
 
     # tag the newly created volume
-    local error=`aws efs create-tags --region ${EC2_REGION} --file-system-id ${FSID} --tags Key=Name,Value=${name} 2>&1`
+    error=`aws efs create-tags --region ${EC2_REGION} --file-system-id ${FSID} --tags Key=Name,Value=${name} 2>&1`
     if [ $? -ne 0 ]; then
         err "{ \"status\": \"Failure\", \"message\": \"Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${name} failed. ${error}\"}"
         exit 1
     fi
 
-    log "{\"status\": \"Success\",\"options\":{\"created\":true,\"fsid\":\"${FSID}\",\"mountTargetId\":\"${MOUNT_TARGET_ID}\"}}"
+    log "{\"status\": \"Success\",\"options\":{\"created\":true,\"fsid\":\"${FSID}\",\"mountTargetId\":\"${MOUNT_TARGET_ID}\",\"mountTargetSGID\":\"${mountTargetSGID}\"}}"
     exit 0
 }
 
@@ -185,6 +203,13 @@ delete() {
     fi
 
     wait_mount_target_deleting
+
+    mountTargetSGID=$(echo ${1} | jq -r '.options.mountTargetSGID')
+    local error=`aws ec2 delete-security-group --region ${EC2_REGION} --group-id ${mountTargetSGID} 2>&1`
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to delete mount target security group ${mountTargetSGID}. ${error}\"}"
+        exit 1
+    fi
 
     local error=`aws efs delete-file-system --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
     if [ $? -ne 0 ]; then
@@ -236,11 +261,11 @@ domount() {
 
     get_meta_data
 
-    EFS_DNS_NAME=${EC2_AVAIL_ZONE}.${FSID}.efs.${EC2_REGION}.amazonaws.com
+    efsDNSName=${EC2_AVAIL_ZONE}.${FSID}.efs.${EC2_REGION}.amazonaws.com
     sudo mkdir -p "${mntDest}"
-    local error=`sudo mount -t nfs4 ${mntOptions} ${EFS_DNS_NAME}:${exportDir} ${mntDest} 2>&1`
+    local error=`sudo mount -t nfs4 ${mntOptions} ${efsDNSName}:${exportDir} ${mntDest} 2>&1`
     if [ $? -ne 0 ]; then
-        err "{ \"status\": \"Failure\", \"message\": \"Failed to mount ${EFS_DNS_NAME}:${exportDir} at ${mntDest}. ${error}\"}"
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to mount ${efsDNSName}:${exportDir} at ${mntDest}. ${error}\"}"
         exit 1
     fi
     log "{\"status\": \"Success\"}"
