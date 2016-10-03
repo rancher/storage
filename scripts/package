@@ -17,12 +17,12 @@ if [ ! -e ../bin/storage ]; then
 fi
 
 > ../dist/images
-for i in *; do
-    cp ../bin/storage $i
-    cd $i
-    IMAGE=${REPO}/storage-${i}:${TAG}
-    docker build -t ${IMAGE} .
-    cd ..
+
+cp ../bin/storage .
+for i in */Dockerfile; do
+    BASE=$(dirname $i)
+    IMAGE=${REPO}/storage-${BASE}:${TAG}
+    docker build -f $i -t ${IMAGE} .
     echo ${IMAGE} >> ../dist/images
     echo Built ${IMAGE}
 done

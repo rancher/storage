@@ -1,18 +1,22 @@
 package main
 
 import (
-	"errors"
+	"context"
 	"os"
 
 	"github.com/Sirupsen/logrus"
+	dockerClient "github.com/docker/engine-api/client"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
 	"github.com/rancher/kubernetes-agent/healthcheck"
 	"github.com/rancher/storage/docker/volumeplugin"
 	"github.com/urfave/cli"
 )
 
-const healthCheckPort = 10241
+const (
+	healthCheckPort = 10242
+)
 
 var VERSION = "v0.0.0-dev"
 
@@ -52,6 +56,17 @@ func main() {
 			Value: 5000,
 			Usage: "set the frequency of performing healthchecks",
 		},
+		cli.IntFlag{
+			Name:  "healthcheck-port",
+			Value: 10242,
+			Usage: "listen port for healthchecks",
+		},
+		cli.StringFlag{
+			Name:   "docker-host",
+			Value:  "unix:///var/run/docker.sock",
+			Usage:  "The DOCKER_HOST to connect to",
+			EnvVar: "DOCKER_HOST",
+		},
 	}
 	logrus.Info("Running")
 	app.Run(os.Args)
@@ -59,12 +74,20 @@ func main() {
 
 func start(c *cli.Context) error {
 	logrus.Info("Starting")
+	cli, err := dockerClient.NewClient(c.String("docker-host"), "v1.24", nil, nil)
+	if err != nil {
+		return err
+	}
+
+	if _, err := cli.Info(context.Background()); err != nil {
+		return err
+	}
+
 	opts := &client.ClientOpts{
 		Url:       c.String("cattle-url"),
 		AccessKey: c.String("cattle-access-key"),
 		SecretKey: c.String("cattle-secret-key"),
 	}
-	logrus.Info("Opts %v", opts)
 	client, err := client.NewRancherClient(opts)
 	if err != nil {
 		return err
@@ -74,7 +97,7 @@ func start(c *cli.Context) error {
 	if driverName == "" {
 		return errors.New("--driver-name is required")
 	}
-	d := volumeplugin.NewRancherStorageDriver(driverName, client)
+	d, err := volumeplugin.NewRancherStorageDriver(driverName, client, cli)
 	//		DriveName:       driver,
 	//		Basedir:         DefaultBasedir,
 	//		CreateSupported: true,
@@ -85,11 +108,14 @@ func start(c *cli.Context) error {
 	//		},
 	//		mounter: &mount.SafeFormatAndMount{Interface: mount.New(), Runner: exec.New()},
 	//		FsType:  DefaultFsType,
+	if err != nil {
+		return err
+	}
 
 	logrus.Infof("Starting plugin for %s", driverName)
 	h := volume.NewHandler(d)
 	go func() {
-		err := healthcheck.StartHealthCheck(healthCheckPort)
+		err := healthcheck.StartHealthCheck(c.Int("healthcheck-port"))
 		logrus.Fatalf("Error while running healthcheck [%v]", err)
 	}()
 	return h.ServeUnix("root", driverName)

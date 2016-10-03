@@ -6,8 +6,15 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
 )
+
+func volErr2(message string, err error) volume.Response {
+	return volume.Response{
+		Err: errors.Wrap(err, message).Error(),
+	}
+}
 
 func volErr(err error) volume.Response {
 	return volume.Response{
