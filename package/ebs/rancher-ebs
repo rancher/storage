@@ -190,7 +190,7 @@ create() {
         exit 1
     fi
 
-    log "{\"status\": \"Success\",\"options\":{\"created\":true,\"volumeID\":\"${VOLUME_ID}\"}}"
+    log "{\"status\": \"Success\",\"options\":{\"created\":\"true\",\"volumeID\":\"${VOLUME_ID}\"}}"
     exit 0
 }
 

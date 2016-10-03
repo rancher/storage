@@ -1,0 +1,71 @@
+#!/bin/bash
+set -x
+
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+
+init()
+{
+    if [ -e /dev/loop-control ]; then
+        modprobe loop
+    fi
+    print_success
+}
+
+create()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS[size]}" ]; then
+        print_error "size is required"
+    fi
+    UUID=$(</proc/sys/kernel/random/uuid)
+    dd if=/dev/zero of=${UUID}.img bs=1MB count=${OPTS[size]}
+    print_options volumeID ${UUID}
+}
+
+delete()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    rm -f ${OPTS[volumeID]}.img
+    print_success
+}
+
+attach()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    IMG=${OPTS[volumeID]}.img
+    if [ ! -e "${IMG}" ]; then
+        print_error "Failed to find ${IMG}"
+    fi
+
+    DEVICE=$(losetup --show -f ${IMG})
+
+    print_device $DEVICE
+}
+
+detach()
+{
+    # ${DEVICE} will be set with the device that should be detached
+    losetup -d ${DEVICE}
+    print_success
+}
+
+mount()
+{
+    # ${MNT_DEST} will be set with the directory where the filesystem should be mounted
+    # ${DEVICE} will be the device returned from attach, if any
+    # ${OPTS} will be populated with the options from the JSON input
+    print_not_supported
+}
+
+unmount()
+{
+    # ${MNT_DEST} will be set with the directory from which the filesystem should be unmounted
+    print_not_supported
+}
+
+# Every script must call main as such
+main "$@"

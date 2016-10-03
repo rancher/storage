@@ -31,6 +31,9 @@ func (d *RancherStorageDriver) exec(command string, args ...string) (CmdOutput, 
 	cmd.Stdout = buf
 
 	if err := cmd.Run(); err != nil {
+		if json.Unmarshal(buf.Bytes(), &result) == nil && result.Message != "" {
+			return result, errors.New(result.Message)
+		}
 		return result, err
 	}
 
