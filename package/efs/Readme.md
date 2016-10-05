@@ -32,16 +32,16 @@ driver does nothing
 ```
 ./efs create '{"fsid":"fs-90d12d39"}'
 
-stdout output: {"status":"Success","options":{}}
+stdout output: {"status":"Success","message":""}
 ```
 
 ##### Delete command
 driver does nothing
 
 ```
-./efs delete '{"fsid":"fs-90d12d39","options":{}}'
+./efs delete '{"fsid":"fs-90d12d39"}
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Mount command
@@ -52,7 +52,7 @@ driver mounts EFS using pre-existing fsid provided by user
 
 mntOptions key-value pair is optional for mount, but fsid and export are the must
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 The result is that us-west-2b.fs-90d12d39.efs.us-west-2.amazonaws.com://test is mounted to /home/ubuntu/efsMnt.
@@ -64,7 +64,7 @@ driver unmount EFS file system
 ```
 ./efs unmount /home/ubuntu/efsMnt
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 ### 2. User does not provide fsid
@@ -80,18 +80,18 @@ name and creationToken key-value pairs must be provided in json_options and perf
 
 stdout output: {"status":"Success","options":{"created":true,"fsid":"fs-b59c621c","mountTargetId":"fsmt-b20df41b"}}
 
-the options map from the output will be passed as json_input for delete command
+the options map from the output will be passed in as part of json_input for delete command
 ```
 
 ##### Delete command
 driver deletes created EFS file system
 
 ```
-./efs delete '{"options":{"created":true,"fsid":"fs-b59c621c","mountTargetId":"fsmt-b20df41b"}}'
+./efs delete '{"created":true,"fsid":"fs-b59c621c","mountTargetId":"fsmt-b20df41b"}'
 
-the options map is part of output from create command
+the options map from create command output is passed in to delete command as part of json_input
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Mount command
@@ -102,7 +102,7 @@ driver mounts EFS using fsid created at create command phase
 
 mntOptions key-value pair is optional for mount, but fsid and export are the must
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 The result is that us-west-2b.fs-b59c621c.efs.us-west-2.amazonaws.com:/ is mounted to /home/ubuntu/efsMnt
@@ -113,5 +113,5 @@ driver unmount EFS file system
 ```
 ./efs unmount /home/ubuntu/efsMnt
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```

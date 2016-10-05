@@ -32,16 +32,16 @@ driver does nothing
 ```
 ./nfs create '{"host":"146.148.46.118","export":"/var/nfs"}'
 
-stdout output: {"status":"Success","options":{}}
+stdout output: {"status":"Success","message":""}
 ```
 
 ##### Delete command
 driver does nothing
 
 ```
-./nfs delete '{"host":"146.148.46.118","export":"/var/nfs","options":{}}'
+./nfs delete '{"host":"146.148.46.118","export":"/var/nfs"}'
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Mount command
@@ -52,7 +52,7 @@ driver mounts NFS using pre-existing remote share provided by user
 
 mntOptions key-value pair is optional for mount, but host and export are the must
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 The result is that 146.148.46.118:/var/nfs is mounted at /home/ubuntu/nfsMnt
@@ -64,7 +64,7 @@ driver unmount NFS file system
 ```
 ./nfs unmount /home/ubuntu/nfsMnt
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 ### 2. User does not provide remote share
@@ -90,18 +90,18 @@ mntDest is needed for driver to temporarily mount remote share in order to creat
 
 stdout output: {"status": "Success”,"options":{"created":true,"name":"vol1”}}
 
-the options map from the output will be passed as json_input for delete command
+the options map from the output will be passed in as part of json_input for delete command
 ```
 
 ##### Delete command
 driver deletes created directory at create phase
 
 ```
-./nfs delete '{"mntDest":"/home/ubuntu/mnt","options":{"created":true,"name":"vol1"}}'
+./nfs delete '{"mntDest":"/home/ubuntu/mnt", "created":"true", "name":"vol1"}'
 
-the options map is part of output from create command
+the options map from create command output is passed in to delete command as part of json_input
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Mount command
@@ -112,7 +112,7 @@ driver mounts NFS src share using HOST:EXPORT/name created at create command pha
 
 mntOptions key-value pair is optional for mount, but name is a must
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 The result is that 146.148.46.118:/var/nfs/name is mounted at /home/ubuntu/nfsMnt
@@ -123,5 +123,5 @@ driver unmount NFS remote share
 ```
 ./nfs unmount /home/ubuntu/nfsMnt
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
