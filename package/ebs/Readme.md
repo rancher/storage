@@ -32,16 +32,16 @@ driver does nothing
 ```
 ./ebs create '{"volumeID":"vol-870fdb33"}'
 
-stdout output: {"status":"Success","options":{}}
+stdout output: {"status":"Success","message":""}
 ```
 
 ##### Delete command
 driver does nothing
 
 ```
-./ebs delete '{"volumeID":"vol-870fdb33","options":{}}'
+./ebs delete '{"volumeID":"vol-870fdb33"}'
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Attach command
@@ -61,7 +61,7 @@ driver detach EBS block device
 ```
 ./ebs detach /dev/xvdf
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 ### 2. User does not provide volumeID
@@ -75,20 +75,20 @@ The output is the status and newly created volumeID.
 
 name and size key-value pairs must be provided in json_options and others are optional parameters
 
-stdout output: {"status":"Success","options":{"created":true,"volumeID":"vol-870fdb33"}}
+stdout output: {"status":"Success","created":true,"volumeID":"vol-870fdb33"}
 
-the options map from the output will be passed as json_input for delete command
+the options map from the output will be passed in as part of json_input for delete command
 ```
 
 ##### Delete command
 driver deletes created EBS file system
 
 ```
-./ebs delete '{"options":{"created":true,"volumeID":"vol-870fdb33"}}'
+./ebs delete '{"created":true,"volumeID":"vol-870fdb33"}'
 
-the options map is part of output from create command
+the options map from create command output is passed in to delete command as part of json_input
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```
 
 #### Attach command
@@ -108,5 +108,5 @@ driver detach EBS block device
 ```
 ./ebs detach /dev/xvdf
 
-stdout output: {"status":"Success"}
+stdout output: {"status":"Success","message":""}
 ```

@@ -9,7 +9,7 @@ usage() {
     err "\t$0 create <json params>"
     err "\t$0 delete <json params>"
     err "\t$0 attach <json params>"
-    err "\t$0 detach <json params>"
+    err "\t$0 detach <device>"
     err "\t$0 mount <mount dir> <device> <json params>"
     err "\t$0 unmount <mount dir> <json params>"
     err "\t$0 init"
@@ -34,7 +34,7 @@ main()
             parse "$4"
             ;;
         unmount)
-            MNT_DEST="$2" 
+            MNT_DEST="$2"
             parse "$3"
             ;;
         *)
@@ -80,4 +80,14 @@ print_error()
 {
     echo -n "$@" | jq -R -c -s '{"status": "Failure", "message": .}'
     return 1
+}
+
+ismounted() {
+    local mountPoint=$1
+    local mountP=`findmnt -n ${mountPoint} 2>/dev/null | cut -d' ' -f1`
+    if [ "${mountP}" == "${mountPoint}" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
 }
