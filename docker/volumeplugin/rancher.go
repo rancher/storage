@@ -20,6 +20,7 @@ var goodStates = map[string]bool{
 	"activating":   true,
 	"deactivating": true,
 	"detached":     true,
+	"removing":     true,
 }
 
 type RancherState struct {
