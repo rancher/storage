@@ -21,27 +21,32 @@ main()
 
     case $1 in
         init)
+            "$@"
             ;;
         create|delete|attach)
             parse "$2"
+            "$@"
             ;;
         detach)
             DEVICE="$2"
+            "$@"
             ;;
         mount)
             MNT_DEST="$2"
             DEVICE="$3"
             parse "$4"
+            shift 1
+            mountdest "$@"
             ;;
         unmount)
             MNT_DEST="$2"
             parse "$3"
+            "$@"
             ;;
         *)
             usage
             ;;
     esac
-    "$@"
 }
 
 declare -A OPTS
