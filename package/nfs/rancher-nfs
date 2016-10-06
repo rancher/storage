@@ -23,8 +23,8 @@ mount_default_share() {
 
     # mount remote share if not mounted already
     if [ $(ismounted "${mntDest}") == 0 ] ; then
-        sudo mkdir -p "${mntDest}"
-        error=`sudo mount "${HOST}":"${EXPORT}" "${mntDest}" 2>&1`
+        mkdir -p "${mntDest}"
+        error=`mount "${HOST}":"${EXPORT}" "${mntDest}" 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${HOST}:${EXPORT} ${mntDest}: ${error}"
         fi
@@ -35,20 +35,20 @@ unmount_default_share() {
     local mntDest=$1
 
     # now unmount
-    local error=`sudo umount ${mntDest} 2>&1`
+    local error=`umount ${mntDest} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed umount ${mntDest}: ${error}"
     fi
 
     # remove empty temporary mntDest directory we created
     if [ ! "$(ls -A ${mntDest})" ]; then
-        sudo rm -rf "${mntDest}"
+        rm -rf "${mntDest}"
     fi
 }
 
 init()
 {
-    print_not_supported
+    print_success
 }
 
 create() {
@@ -69,7 +69,7 @@ create() {
     local subDir="${mntDest}"/"${OPTS[name]}"
     local created=0
     if [ ! -d "${subDir}" ]; then
-        sudo mkdir -p "${subDir}"
+        mkdir -p "${subDir}"
         created=1
     fi
 
@@ -99,7 +99,7 @@ delete() {
     # delete sub-directory using name parameter to represent volume
     local subDir="${mntDest}"/"${OPTS[name]}"
     if [ -d "$subDir" ]; then
-        sudo rm -rf "${subDir}"
+        rm -rf "${subDir}"
     fi
 
     # now unmount
@@ -144,8 +144,8 @@ mount() {
 
     # mount remote share if not mounted already
     if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
-        sudo mkdir -p "${MNT_DEST}"
-        error=`sudo mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
+        mkdir -p "${MNT_DEST}"
+        error=`mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${mntOptions} ${mntSrc} ${MNT_DEST}: ${error}"
         fi
@@ -156,7 +156,7 @@ mount() {
 
 unmount() {
     if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
-        error=`sudo umount "${MNT_DEST}" 2>&1`
+        error=`umount "${MNT_DEST}" 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed umount ${MNT_DEST}: ${error}"
         fi

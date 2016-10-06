@@ -118,7 +118,7 @@ find_matching_linux_device_path() {
 
 init()
 {
-    print_not_supported
+    print_success
 }
 
 create() {

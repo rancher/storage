@@ -70,7 +70,7 @@ wait_mount_target_deleting() {
 
 init()
 {
-    print_not_supported
+    print_success
 }
 
 create() {
@@ -212,8 +212,8 @@ mount() {
     get_meta_data
 
     efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
-    sudo mkdir -p "${MNT_DEST}"
-    local error=`sudo mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+    mkdir -p "${MNT_DEST}"
+    local error=`mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to mount ${efsDNSName}:${OPTS[export]} at ${MNT_DEST}. ${error}"
     fi
@@ -227,7 +227,7 @@ unmount() {
         exit 0
     fi
 
-    local error=`sudo umount ${MNT_DEST} 2>&1`
+    local error=`umount ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to unmount volume at ${MNT_DEST}. ${error}"
     fi
