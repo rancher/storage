@@ -70,6 +70,7 @@ wait_mount_target_deleting() {
 
 init()
 {
+    init_nfs_client_service
     print_success
 }
 
@@ -190,7 +191,7 @@ detach() {
     print_not_supported
 }
 
-mount() {
+mountdest() {
     if [ -z "${OPTS[fsid]}" ]; then
         print_error "fsid is required"
     fi
@@ -213,7 +214,8 @@ mount() {
 
     efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
     mkdir -p "${MNT_DEST}"
-    local error=`mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+    get_host_process_pid
+    local error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to mount ${efsDNSName}:${OPTS[export]} at ${MNT_DEST}. ${error}"
     fi

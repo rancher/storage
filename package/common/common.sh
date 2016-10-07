@@ -96,3 +96,19 @@ ismounted() {
         echo "0"
     fi
 }
+
+init_nfs_client_service() {
+    # using host network context to start rpcbind and rpc.statd inside the container process.
+    # this requires mapping host pid namespace to this containers when container starts.
+    # here parent is the storage --driver rancher-nfs process, the script process is launched
+    # on demand of each create/delete etc calls, so host process pid is 2 hops away
+    PARENT_PID=$(ps --no-header --pid $$ -o ppid)
+    TARGET_PID=$(ps --no-header --pid ${PARENT_PID} -o ppid)
+    nsenter -t $TARGET_PID -n rpcbind >& /dev/null
+    nsenter -t $TARGET_PID -n rpc.statd >& /dev/null
+}
+
+get_host_process_pid() {
+    PARENT_PID=$(ps --no-header --pid $$ -o ppid)
+    TARGET_PID=$(ps --no-header --pid ${PARENT_PID} -o ppid)
+}

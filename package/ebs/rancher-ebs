@@ -257,7 +257,7 @@ detach() {
     print_success
 }
 
-mount() {
+mountdest() {
     print_not_supported
 }
 
