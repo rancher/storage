@@ -124,6 +124,8 @@ func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
 }
 
 func (d *RancherStorageDriver) Remove(request volume.Request) volume.Response {
+	logrus.Infof("Docker Remove request: %v", request)
+
 	_, rVol, err := d.state.Get(request.Name)
 	if err == errNoSuchVolume {
 		return volume.Response{}
@@ -131,6 +133,7 @@ func (d *RancherStorageDriver) Remove(request volume.Request) volume.Response {
 		return volErr(err)
 	}
 
+	// Docker removal is fake, unless Rancher initiated removal of resource, then we do it.
 	if rVol.State == "removing" {
 		_, err := d.exec("delete", toArgs(request.Name, getOptions(rVol)))
 		if err != nil {

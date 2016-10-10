@@ -10,7 +10,7 @@ import (
 
 const (
 	statusSuccess      = "Success"
-	statusFailure      = "Failed"
+	statusFailure      = "Failure"
 	statusNotSupported = "Not supported"
 )
 
