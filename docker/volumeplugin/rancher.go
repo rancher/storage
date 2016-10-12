@@ -50,19 +50,20 @@ func NewRancherState(driver string, client *client.RancherClient) (*RancherState
 }
 
 func (r *RancherState) IsCreated(name string) (bool, error) {
-	_, vol, err := r.Get(name)
+	_, _, err := r.Get(name)
 	if err == errNoSuchVolume {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return isCreated(r.driver, *vol), nil
+	return true, nil
 }
 
 func (r *RancherState) Save(name string, options map[string]string) error {
-	_, vol, err := r.Get(name)
+	_, vol, err := r.getAny(name)
 	if err == errNoSuchVolume {
+		logrus.Debugf("Create volume name=%s in Rancher", name)
 		_, err = r.client.Volume.Create(&client.Volume{
 			Name:            name,
 			StorageDriverId: r.driverID,
@@ -71,6 +72,7 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 		})
 		return err
 	} else if err == nil {
+		logrus.Debugf("Update volume name=%s state=%s in Rancher", name, vol.State)
 		_, err = r.client.Volume.Update(vol, &client.Volume{
 			Name:            name,
 			Driver:          r.driver,
@@ -108,11 +110,31 @@ func isCreated(driver string, vol client.Volume) bool {
 	return goodStates[vol.State]
 }
 
+func (r *RancherState) getAny(name string) (*volume.Volume, *client.Volume, error) {
+	vols, err := r.client.Volume.List(&client.ListOpts{
+		Filters: map[string]interface{}{
+			"name":            name,
+			"removed_null":    "true",
+			"storageDriverId": r.driverID,
+		},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(vols.Data) == 0 {
+		return nil, nil, errNoSuchVolume
+	}
+
+	return volToVol(vols.Data[0]), &vols.Data[0], nil
+}
+
 func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) {
 	vols, err := r.client.Volume.List(&client.ListOpts{
 		Filters: map[string]interface{}{
-			"name":         name,
-			"removed_null": "true",
+			"name":            name,
+			"removed_null":    "true",
+			"storageDriverId": r.driverID,
 		},
 	})
 	if err != nil {
