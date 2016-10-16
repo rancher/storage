@@ -112,3 +112,10 @@ get_host_process_pid() {
     PARENT_PID=$(ps --no-header --pid $$ -o ppid)
     TARGET_PID=$(ps --no-header --pid ${PARENT_PID} -o ppid)
 }
+
+unset_aws_credentials_env() {
+    if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+        unset AWS_ACCESS_KEY_ID
+        unset AWS_SECRET_ACCESS_KEY
+    fi
+}

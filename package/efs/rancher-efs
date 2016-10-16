@@ -95,6 +95,8 @@ create() {
         performanceMode="--performance-mode ${OPTS[performanceMode]}"
     fi
 
+    unset_aws_credentials_env
+
     get_meta_data
 
     # create a EFS FS using aws-cli
@@ -160,6 +162,8 @@ delete() {
     FSID=${OPTS[fsid]}
     MOUNT_TARGET_ID=${OPTS[mountTargetId]}
 
+    unset_aws_credentials_env
+
     get_meta_data
 
     local error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
@@ -209,6 +213,8 @@ mountdest() {
         print_success
         exit 0
     fi
+
+    unset_aws_credentials_env
 
     get_meta_data
 

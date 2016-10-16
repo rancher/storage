@@ -11,7 +11,7 @@ elif [ -e "$(dirname $0)/../common/common.sh" ]; then
 fi
 
 get_meta_data() {
-    EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+    EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null`
     EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
     INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null`
 }
@@ -150,6 +150,8 @@ create() {
         type_option="--volume-type ${type}"
     fi
 
+    unset_aws_credentials_env
+
     get_meta_data
 
     # create a EBS volume using aws-cli
@@ -183,6 +185,8 @@ delete() {
 
     VOLUME_ID=${OPTS[volumeID]}
 
+    unset_aws_credentials_env
+
     get_meta_data
 
     local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
@@ -210,7 +214,10 @@ attach() {
 
     VOLUME_ID=${OPTS[volumeID]}
 
+    unset_aws_credentials_env
+
     get_meta_data
+
     detach_if_attached
 
     local device_path=$(find_available_device_path)
@@ -230,6 +237,8 @@ attach() {
 
 detach() {
     local aws_device_path="/dev/sd""${DEVICE: -1}"
+
+    unset_aws_credentials_env
 
     get_meta_data
 
