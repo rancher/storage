@@ -63,7 +63,7 @@ func (r *RancherState) IsCreated(name string) (bool, error) {
 func (r *RancherState) Save(name string, options map[string]string) error {
 	_, vol, err := r.getAny(name)
 	if err == errNoSuchVolume {
-		logrus.Debugf("Create volume name=%s in Rancher", name)
+		logrus.Infof("Create volume name=%s in Rancher", name)
 		_, err = r.client.Volume.Create(&client.Volume{
 			Name:            name,
 			StorageDriverId: r.driverID,
@@ -72,7 +72,7 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 		})
 		return err
 	} else if err == nil {
-		logrus.Debugf("Update volume name=%s state=%s in Rancher", name, vol.State)
+		logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
 		_, err = r.client.Volume.Update(vol, &client.Volume{
 			Name:            name,
 			Driver:          r.driver,

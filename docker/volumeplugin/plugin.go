@@ -97,7 +97,7 @@ func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 	}
 
 	if err := d.state.Save(request.Name, result); err != nil {
-		logrus.Debugf("Save volume name=%s failed, err: %s", request.Name, err)
+		logrus.Errorf("Save volume name=%s failed, err: %s", request.Name, err)
 		d.exec("delete", toArgs(request.Name, result))
 		return volErr(err)
 	}
