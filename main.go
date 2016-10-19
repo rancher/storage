@@ -14,10 +14,6 @@ import (
 	"github.com/urfave/cli"
 )
 
-const (
-	healthCheckPort = 10242
-)
-
 var VERSION = "v0.0.0-dev"
 
 func main() {
@@ -58,7 +54,6 @@ func main() {
 		},
 		cli.IntFlag{
 			Name:  "healthcheck-port",
-			Value: 10242,
 			Usage: "listen port for healthchecks",
 		},
 		cli.StringFlag{
@@ -114,9 +109,11 @@ func start(c *cli.Context) error {
 
 	logrus.Infof("Starting plugin for %s", driverName)
 	h := volume.NewHandler(d)
-	go func() {
-		err := healthcheck.StartHealthCheck(c.Int("healthcheck-port"))
-		logrus.Fatalf("Error while running healthcheck [%v]", err)
-	}()
+	if c.Int("healthcheck-port") > 0 {
+		go func() {
+			err := healthcheck.StartHealthCheck(c.Int("healthcheck-port"))
+			logrus.Fatalf("Error while running healthcheck [%v]", err)
+		}()
+	}
 	return h.ServeUnix("root", driverName)
 }
