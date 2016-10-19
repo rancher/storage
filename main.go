@@ -74,7 +74,7 @@ func main() {
 
 func start(c *cli.Context) error {
 	logrus.Info("Starting")
-	cli, err := dockerClient.NewClient(c.String("docker-host"), "v1.24", nil, nil)
+	cli, err := dockerClient.NewClient(c.String("docker-host"), "v1.22", nil, nil)
 	if err != nil {
 		return err
 	}
