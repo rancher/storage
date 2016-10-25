@@ -1,0 +1,66 @@
+#!/bin/bash
+set -x
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+
+init()
+{
+    print_success
+}
+
+create()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS[name]}" ]; then
+        print_error "name is required"
+    fi
+    if [ -z "${OPTS[quota]}" ]; then
+        print_error "quota is required"
+    fi
+    if [ -z "${OPTS[reservation]}" ]; then
+        print_error "reservation is required"
+    fi
+    zfs create -oquota=${OPTS[quota]} -oreservation=${OPTS[reservation]} ${ZPOOL_NAME}/${OPTS[name]}
+    print_options volumeName ${OPTS[name]}
+}
+
+delete()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    zfs destroy ${ZPOOL_NAME}/${OPTS[name]}
+    print_success
+}
+
+attach()
+{
+    print_not_supported
+}
+
+detach()
+{
+    print_not_supported
+}
+
+mountdest()
+{
+    # ${MNT_DEST} will be set with the directory where the filesystem should be mounted
+    # ${DEVICE} will be the device returned from attach, if any
+    # ${OPTS} will be populated with the options from the JSON input
+    print_not_supported
+}
+
+unmount()
+{
+    # ${MNT_DEST} will be set with the directory from which the filesystem should be unmounted
+    print_not_supported
+}
+
+# Every script must call main as such
+main "$@"
