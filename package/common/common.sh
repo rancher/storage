@@ -1,4 +1,5 @@
 set -e -o pipefail
+if [ "$RANCHER_DEBUG" == "true" ]; then set -x; fi
 
 err() {
     echo -e $@ 1>&2

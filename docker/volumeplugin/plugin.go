@@ -190,7 +190,7 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err == errNotSupported {
 		fsType := d.getFsType(rVol)
 		logrus.Infof("Formatting and mounting %s", cmdOutput.Device)
-		if err := d.mounter.FormatAndMount(cmdOutput.Device, mntDest, fsType, []string{}); err != nil {
+		if err := d.mounter.FormatAndMount(cmdOutput.Device, mntDest, fsType, []string{}, true); err != nil {
 			logrus.Errorf("Failed to format and mount %s: %v", request.Name, err)
 			return volErr(errors.Wrap(err, "mount"))
 		}
