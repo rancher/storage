@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"k8s.io/kubernetes/pkg/util/exec"
@@ -70,7 +69,6 @@ type RancherStorageDriver struct {
 	mounter         *mount.SafeFormatAndMount
 	FsType          string
 	cli             *dockerClient.Client
-	mountLock       sync.Mutex
 }
 
 func (d *RancherStorageDriver) init() error {
@@ -106,7 +104,7 @@ func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 }
 
 func (d *RancherStorageDriver) List(request volume.Request) volume.Response {
-	logrus.Infof("Docker List request: %v", request)
+	//logrus.Infof("Docker List request: %v", request)
 
 	volumes, err := d.state.List()
 	if err != nil {
@@ -160,9 +158,6 @@ func (d *RancherStorageDriver) isMounted(path string) (bool, error) {
 }
 
 func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Response {
-	d.mountLock.Lock()
-	defer d.mountLock.Unlock()
-
 	logrus.Infof("Docker Mount request: %v", request)
 	_, rVol, err := d.state.Get(request.Name)
 	if err != nil {
@@ -217,14 +212,17 @@ func (d *RancherStorageDriver) getFsType(vol *client.Volume) string {
 
 func (d *RancherStorageDriver) Unmount(request volume.UnmountRequest) volume.Response {
 	logrus.Infof("Docker Unmount request: %v", request)
+
+	if err := d.unmount(request.Name); err != nil {
+		lastErr = err
+		logrus.Errorf("Failed to unmount %s: %v", request.Name, err)
+	}
+
 	d.kickGC()
 	return volume.Response{}
 }
 
 func (d *RancherStorageDriver) unmount(mntDest string) error {
-	d.mountLock.Lock()
-	defer d.mountLock.Unlock()
-
 	logrus.Infof("Unmounting %s", mntDest)
 	device, refCount, err := mount.GetDeviceNameFromMount(d.mounter, mntDest)
 	if err != nil {
@@ -280,6 +278,7 @@ func (d *RancherStorageDriver) getMntRoot() string {
 	return filepath.Join(d.Basedir, d.DriverName)
 }
 
+// sometimes this routines runs concurrently, need to make sure it is idempotent
 func (d *RancherStorageDriver) kickGC() {
 	go func() {
 		time.Sleep(time.Second)

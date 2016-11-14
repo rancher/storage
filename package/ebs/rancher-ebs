@@ -49,6 +49,7 @@ wait_volume_attaching() {
     fi
 }
 
+# TODO remove dead code unless we find a use for this
 detach_if_attached(){
     local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
@@ -208,31 +209,7 @@ delete() {
 }
 
 attach() {
-    if [ -z "${OPTS[volumeID]}" ]; then
-        print_error "volumeID is required"
-    fi
-
-    VOLUME_ID=${OPTS[volumeID]}
-
-    unset_aws_credentials_env
-
-    get_meta_data
-
-    detach_if_attached
-
-    local device_path=$(find_available_device_path)
-
-    local error=`aws ec2 attach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}"
-    fi
-
-    wait_volume_attaching
-
-    # need to return real linux device path, it could be in a different format "sdf" => "xvdf"
-    local linux_device_path=$(find_matching_linux_device_path "${device_path}")
-
-    print_device ${linux_device_path}
+    print_not_supported
 }
 
 detach() {
@@ -267,11 +244,55 @@ detach() {
 }
 
 mountdest() {
-    print_not_supported
+    if [ -z "${OPTS[volumeID]}" ]; then
+        print_error "volumeID is required"
+    fi
+
+    VOLUME_ID=${OPTS[volumeID]}
+
+    unset_aws_credentials_env
+
+    get_meta_data
+
+    local device_path=$(find_available_device_path)
+
+    local error=`aws ec2 attach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
+    if [ $? -ne 0 ]; then
+        print_error "Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}"
+    fi
+
+    wait_volume_attaching
+
+    # need to return real linux device path, it could be in a different format "sdf" => "xvdf"
+    local linux_device_path=$(find_matching_linux_device_path "${device_path}")
+
+    local error=`mkfs.ext4 -F $linux_device_path 2>&1`
+    if [ $? -ne 0 ]; then
+        print_error $error
+    fi
+
+    local error=`mount $linux_device_path $MNT_DEST 2>&1`
+    if [ $? -ne 0 ]; then
+        print_error $error
+    fi
+
+    print_success
 }
 
 unmount() {
-    print_not_supported
+    set +e
+    result=$(umount $MNT_DEST 2>&1)
+    exitcode=$?
+    if [ "$exitcode" != "0" ]; then
+        if [ "$(echo $result | grep 'not mounted')" ]; then
+            print_success not mounted
+        elif [ "$(echo $result | grep 'mountpoint not found')" ]; then
+            print_success not found
+        else
+            print_error $result
+        fi
+    fi
+    print_success unmounted
 }
 
 # Every script must call main as such
