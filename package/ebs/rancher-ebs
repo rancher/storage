@@ -10,6 +10,8 @@ elif [ -e "$(dirname $0)/../common/common.sh" ]; then
     source $(dirname $0)/../common/common.sh
 fi
 
+set +e
+
 get_meta_data() {
     EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null`
     EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
@@ -20,9 +22,10 @@ wait_volume_transition() {
     local current_state=$1
     local start_state=$1
     local end_state=$2
+    local volumes
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
+        volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to describe volume ${VOLUME_ID}: ${volumes}"
         fi
@@ -36,9 +39,10 @@ wait_volume_transition() {
 
 wait_volume_attaching() {
     local attach_state="attaching"
+    local volumes
     while [ "$attach_state" == "attaching" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
+        volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to describe volume ${VOLUME_ID}: ${volumes}"
         fi
@@ -51,7 +55,10 @@ wait_volume_attaching() {
 
 # TODO remove dead code unless we find a use for this
 detach_if_attached(){
-    local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
+    local volumes
+    local instance_status
+    local error
+    volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in attach: ${volumes}"
     fi
@@ -61,7 +68,7 @@ detach_if_attached(){
 
     # check if volumeID is already attached to another instance
     if [ "${attached_instance_id}" != "null" ]; then
-        local instance_status=`aws ec2 describe-instance-status --region ${EC2_REGION} --instance-ids ${attached_instance_id} 2>&1`
+        instance_status=`aws ec2 describe-instance-status --region ${EC2_REGION} --instance-ids ${attached_instance_id} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed in attach: ${instance_status}"
         fi
@@ -73,7 +80,7 @@ detach_if_attached(){
         fi
 
         # detach it from currently attached instance VM
-        local error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${attached_instance_id} 2>&1`
+        error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${attached_instance_id} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to detach ebs volume-id ${VOLUME_ID} from instance-id ${attached_instance_id}. ${error}"
         fi
@@ -82,7 +89,8 @@ detach_if_attached(){
 }
 
 find_available_device_path() {
-    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
+    local attachments
+    attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
     if [ $? -ne 0 ]; then
         print_error "Failed to describe volume of instance-id ${INSTANCE_ID}. ${attachments}"
     fi
@@ -156,7 +164,8 @@ create() {
     get_meta_data
 
     # create a EBS volume using aws-cli
-    local volume=`aws ec2 create-volume --region ${EC2_REGION} --size ${OPTS[size]} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} 2>&1`
+    local volume
+    volume=`aws ec2 create-volume --region ${EC2_REGION} --size ${OPTS[size]} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} 2>&1`
     if [ $? -ne 0 ]; then
         # now volume is the error message
         print_error "Failed in create: ${volume}"
@@ -166,7 +175,8 @@ create() {
     wait_volume_transition "creating" "available"
 
     # tag the newly created volume
-    local error=`aws ec2 create-tags --region ${EC2_REGION} --resources ${VOLUME_ID} --tags Key=Name,Value=${OPTS[name]} 2>&1`
+    local error
+    error=`aws ec2 create-tags --region ${EC2_REGION} --resources ${VOLUME_ID} --tags Key=Name,Value=${OPTS[name]} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: create-tags for volume ${VOLUME_ID} Key=Name,Value=${OPTS[name]} failed. ${error}"
     fi
@@ -190,7 +200,8 @@ delete() {
 
     get_meta_data
 
-    local volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
+    local volumes
+    volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to describe volume ${VOLUME_ID}: ${volumes}"
     fi
@@ -200,7 +211,8 @@ delete() {
         print_error "Failed to delete volume ${VOLUME_ID}, current state: ${current_state} is not available"
     fi
 
-    local error=`aws ec2 delete-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
+    local error
+    error=`aws ec2 delete-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to delete volume ${VOLUME_ID}. ${error}"
     fi
@@ -220,7 +232,8 @@ detach() {
     get_meta_data
 
     # from device, get VOLUME_ID
-    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
+    local attachments
+    attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
     if [ $? -ne 0 ]; then
         print_error "Failed to describe volume of instance-id ${INSTANCE_ID}. ${attachments}"
     fi
@@ -234,7 +247,8 @@ detach() {
         exit 0
     fi
 
-    local error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
+    local error
+    error=`aws ec2 detach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to detach ebs volume-id ${VOLUME_ID} from current instance. ${error}"
     fi
@@ -244,6 +258,8 @@ detach() {
 }
 
 mountdest() {
+    local error
+
     if [ -z "${OPTS[volumeID]}" ]; then
         print_error "volumeID is required"
     fi
@@ -254,24 +270,34 @@ mountdest() {
 
     get_meta_data
 
-    local device_path=$(find_available_device_path)
+    while true; do
+        local device_path=$(find_available_device_path)
 
-    local error=`aws ec2 attach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}"
-    fi
+        error=`aws ec2 attach-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} --instance-id ${INSTANCE_ID} --device ${device_path} 2>&1`
+        if [ $? -ne 0 ]; then
+            # another mount snagged our device_path
+            if [ "$(echo $error | grep 'already in use')" ]; then
+                continue
+            # unrecoverable error
+            else
+                print_error "Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}"
+            fi
+        else
+            break
+        fi
+    done
 
     wait_volume_attaching
 
     # need to return real linux device path, it could be in a different format "sdf" => "xvdf"
     local linux_device_path=$(find_matching_linux_device_path "${device_path}")
 
-    local error=`mkfs.ext4 -F $linux_device_path 2>&1`
+    error=`mkfs.ext4 -F $linux_device_path 2>&1`
     if [ $? -ne 0 ]; then
         print_error $error
     fi
 
-    local error=`mount $linux_device_path $MNT_DEST 2>&1`
+    error=`mount $linux_device_path $MNT_DEST 2>&1`
     if [ $? -ne 0 ]; then
         print_error $error
     fi
@@ -280,10 +306,9 @@ mountdest() {
 }
 
 unmount() {
-    set +e
-    result=$(umount $MNT_DEST 2>&1)
-    exitcode=$?
-    if [ "$exitcode" != "0" ]; then
+    local result
+    result=`umount $MNT_DEST 2>&1`
+    if [ $? -ne 0 ]; then
         if [ "$(echo $result | grep 'not mounted')" ]; then
             print_success not mounted
         elif [ "$(echo $result | grep 'mountpoint not found')" ]; then
