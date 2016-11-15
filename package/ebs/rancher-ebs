@@ -214,7 +214,11 @@ delete() {
     local error
     error=`aws ec2 delete-volume --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed to delete volume ${VOLUME_ID}. ${error}"
+        if [ "$(echo $error | grep 'InvalidVolume.NotFound')" ]; then
+            print_success "not found"
+        else
+            print_error "Failed to delete volume ${VOLUME_ID}. ${error}"
+        fi
     fi
 
     print_success

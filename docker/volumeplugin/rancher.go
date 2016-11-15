@@ -3,6 +3,7 @@ package volumeplugin
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
@@ -20,7 +21,7 @@ var goodStates = map[string]bool{
 	"activating":   true,
 	"deactivating": true,
 	"detached":     true,
-	"removing":     true,
+//	"removing":     true,
 }
 
 type RancherState struct {
@@ -61,27 +62,35 @@ func (r *RancherState) IsCreated(name string) (bool, error) {
 }
 
 func (r *RancherState) Save(name string, options map[string]string) error {
+	// Wait for the volume to be created by Rancher
 	_, vol, err := r.getAny(name)
-	if err == errNoSuchVolume {
-		logrus.Infof("Create volume name=%s in Rancher", name)
-		_, err = r.client.Volume.Create(&client.Volume{
-			Name:            name,
-			StorageDriverId: r.driverID,
-			DriverOpts:      toMapInterface(options),
-			HostId:          r.hostID,
-		})
-		return err
-	} else if err == nil {
-		logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
-		_, err = r.client.Volume.Update(vol, &client.Volume{
-			Name:            name,
-			Driver:          r.driver,
-			StorageDriverId: r.driverID,
-			DriverOpts:      toMapInterface(options),
-			HostId:          r.hostID,
-		})
-		return err
+	for tries := 1; err != nil; tries++ {
+		if tries == 10 {
+			return errors.Wrap(err, "Max tries reached")
+		}		
+		
+		_, vol, err = r.getAny(name)
+
+		if err != nil {
+			if err == errNoSuchVolume {
+				time.Sleep(time.Second)
+				continue
+			} else {
+				return err
+			}
+		} else {
+			break
+		}
 	}
+
+	//logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
+	_, err = r.client.Volume.Update(vol, &client.Volume{
+		Name:            name,
+		Driver:          r.driver,
+		StorageDriverId: r.driverID,
+		DriverOpts:      toMapInterface(options),
+		HostId:          r.hostID,
+	})
 	return err
 }
 
@@ -141,6 +150,10 @@ func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) 
 		return nil, nil, err
 	}
 
+	if len(vols.Data) > 1 {
+		logrus.Warnf("%d volumes with name=%s found in Rancher", len(vols.Data), name)
+	}
+
 	for _, vol := range vols.Data {
 		if isCreated(r.driver, vol) {
 			return volToVol(vol), &vol, nil
@@ -148,6 +161,14 @@ func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) 
 	}
 
 	return nil, nil, errNoSuchVolume
+}
+
+func (r *RancherState) Delete(name string) error {
+	_, vol, err := r.Get(name)
+	if err != nil {
+		return err
+	}
+	return r.client.Volume.Delete(vol)
 }
 
 func volToVol(vol client.Volume) *volume.Volume {

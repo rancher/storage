@@ -85,7 +85,7 @@ print_success()
 print_error()
 {
     echo -n "$@" | jq -R -c -s '{"status": "Failure", "message": .}'
-    return 1
+    exit 1
 }
 
 ismounted() {
