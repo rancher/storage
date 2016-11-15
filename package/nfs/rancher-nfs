@@ -9,6 +9,8 @@ elif [ -e "$(dirname $0)/../common/common.sh" ]; then
     source $(dirname $0)/../common/common.sh
 fi
 
+set +e
+
 mount_default_share() {
     local mntDest=$1
 
@@ -40,7 +42,8 @@ unmount_default_share() {
     local mntDest=$1
 
     # now unmount
-    local error=`umount ${mntDest} 2>&1`
+    local error
+    error=`umount ${mntDest} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed umount ${mntDest}: ${error}"
     fi
@@ -160,6 +163,7 @@ mountdest() {
     # mount remote share if not mounted already
     if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
         mkdir -p "${MNT_DEST}"
+        local error
         error=`mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${mntOptions} ${mntSrc} ${MNT_DEST}: ${error}"
