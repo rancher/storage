@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"k8s.io/kubernetes/pkg/util/exec"
@@ -15,7 +14,6 @@ import (
 	dockerClient "github.com/docker/engine-api/client"
 	"github.com/docker/engine-api/types"
 	"github.com/docker/engine-api/types/events"
-	"github.com/docker/engine-api/types/filters"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
@@ -53,8 +51,6 @@ func NewRancherStorageDriver(driver string, client *client.RancherClient, cli *d
 	if err := d.init(); err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize")
 	}
-	//d.kickGC()
-	//go d.watchContainerDeletes()
 	return d, nil
 }
 
@@ -125,7 +121,6 @@ func (d *RancherStorageDriver) List(request volume.Request) volume.Response {
 	return response
 }
 
-// FIXME some sort of scalability issue causes Get(request) to be called way too often
 func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
 	//logRequest("get", &request)
 
@@ -216,15 +211,7 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	}
 
 	os.MkdirAll(mntDest, 0750)
-	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err == errNotSupported {
-		fsType := d.getFsType(rVol)
-		logrus.Infof("Formatting and mounting %s", cmdOutput.Device)
-		if err := d.mounter.FormatAndMount(cmdOutput.Device, mntDest, fsType, []string{}, true); err != nil {
-			logrus.Errorf("Failed to format and mount %s: %v", request.Name, err)
-			response.Err = errors.Wrap(err, "mount").Error()
-			return response
-		}
-	} else if err != nil {
+	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err != nil {
 		logrus.Errorf("Failed to mount %s: %v", request.Name, err)
 		response.Err = err.Error()
 		return response
@@ -257,7 +244,6 @@ func (d *RancherStorageDriver) Unmount(request volume.UnmountRequest) volume.Res
 		response.Err = errors.Wrap(err, "unmount").Error()
 	}
 
-	//d.kickGC()
 	return response
 }
 
@@ -267,11 +253,7 @@ func (d *RancherStorageDriver) unmount(mntDest string) error {
 		return errors.Wrapf(err, "find device %s", mntDest)
 	}
 
-	if _, err := d.exec("unmount", mntDest); err == errNotSupported {
-		if err := d.mounter.Unmount(mntDest); err != nil {
-			return errors.Wrapf(err, "umount with mounter %s", mntDest)
-		}
-	} else if err != nil {
+	if _, err := d.exec("unmount", mntDest); err != nil {
 		return errors.Wrapf(err, "umount %s", mntDest)
 	}
 
@@ -314,100 +296,4 @@ func (d *RancherStorageDriver) getMntDest(name string) string {
 
 func (d *RancherStorageDriver) getMntRoot() string {
 	return filepath.Join(d.Basedir, d.DriverName)
-}
-
-// sometimes this routines runs concurrently, need to make sure it is idempotent
-func (d *RancherStorageDriver) kickGC() {
-	go func() {
-		time.Sleep(time.Second)
-		if err := d.gc(); err != nil {
-			logrus.Errorf("Failed to run GC: %v", err)
-		}
-	}()
-}
-
-func (d *RancherStorageDriver) gc() error {
-	mntRoot := d.getMntRoot()
-	mounts, err := d.mounter.List()
-	if err != nil {
-		return err
-	}
-
-	toUnmount := map[string]bool{}
-	toCheck := map[string]bool{}
-	for _, mount := range mounts {
-		if strings.HasPrefix(mount.Path, mntRoot) {
-			toCheck[mount.Path] = true
-		}
-	}
-
-	if len(toCheck) == 0 {
-		return nil
-	}
-
-	knownToDocker := map[string]bool{}
-	volumeResp, err := d.cli.VolumeList(context.Background(), filters.NewArgs())
-	if err != nil {
-		return err
-	}
-	for _, volume := range volumeResp.Volumes {
-		if volume.Driver == d.DriverName {
-			knownToDocker[d.getMntDest(volume.Name)] = true
-		}
-	}
-
-	args := filters.NewArgs()
-	args.Add("dangling", "true")
-	volumeResp, err = d.cli.VolumeList(context.Background(), args)
-	if err != nil {
-		return err
-	}
-	for _, volume := range volumeResp.Volumes {
-		if volume.Driver == d.DriverName {
-			dest := d.getMntDest(volume.Name)
-			if toCheck[dest] {
-				toUnmount[d.getMntDest(volume.Name)] = true
-			}
-		}
-	}
-
-	for mount := range toCheck {
-		if !knownToDocker[mount] {
-			logrus.Errorf("Mounted but not registered in Docker: %s", mount)
-			toUnmount[mount] = true
-		}
-	}
-
-	var lastErr error
-	for mnt := range toUnmount {
-		if err := d.unmount(mnt); err != nil {
-			lastErr = err
-			logrus.Errorf("Failed to unmount %s: %v", mnt, err)
-		}
-	}
-
-	return lastErr
-}
-
-func (d *RancherStorageDriver) watchContainerDeletes() error {
-	for {
-		reader, err := d.cli.Events(context.Background(), types.EventsOptions{})
-		if err != nil {
-			return err
-		}
-		defer reader.Close()
-
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			var event events.Message
-			if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-				logrus.Errorf("Failed to unmarshal %s: %v", scanner.Text(), err)
-			}
-			if event.Status == "destroy" {
-				logrus.Infof("container %s destroyed", event.ID)
-				//d.kickGC()
-			}
-		}
-		time.Sleep(2 * time.Second)
-	}
 }

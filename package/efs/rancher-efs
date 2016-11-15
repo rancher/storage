@@ -71,9 +71,7 @@ wait_mount_target_deleting() {
     done
 }
 
-init()
-{
-    init_nfs_client_service
+init() {
     print_success
 }
 
@@ -82,12 +80,6 @@ create() {
         print_success
         exit 0
     fi
-
-    if [ -z "${OPTS[creationToken]}" ]; then
-        print_error "creationToken is required"
-    fi
-
-    local creationToken="--creation-token ${OPTS[creationToken]}"
 
     if [ -z "${OPTS[name]}" ]; then
         print_error "name is required"
@@ -104,7 +96,7 @@ create() {
 
     # create a EFS FS using aws-cli
     local fs
-    fs=`aws efs create-file-system --region ${EC2_REGION} ${creationToken} ${performanceMode} 2>&1`
+    fs=`aws efs create-file-system --region ${EC2_REGION} --creation-token ${OPTS[name]} ${performanceMode} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: ${fs}"
     fi
@@ -208,10 +200,6 @@ mountdest() {
         print_error "fsid is required"
     fi
 
-    if [ -z "${OPTS[export]}" ]; then
-        print_error "export is required"
-    fi
-
     local mntOptions="-o vers=4.1"
     if [ ! -z "${OPTS[mntOptions]}" ]; then
         mntOptions="-o ${OPTS[mntOptions]}"
@@ -228,11 +216,10 @@ mountdest() {
 
     efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
     mkdir -p "${MNT_DEST}"
-    get_host_process_pid
     local error
-    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+    error=`mount -t nfs4 ${mntOptions} ${efsDNSName}:/ ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed to mount ${efsDNSName}:${OPTS[export]} at ${MNT_DEST}. ${error}"
+        print_error "Failed to mount ${efsDNSName}:/ at ${MNT_DEST}. ${error}"
     fi
 
     print_success

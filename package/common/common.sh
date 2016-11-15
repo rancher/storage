@@ -1,4 +1,4 @@
-set -e -o pipefail
+set -o pipefail
 if [ "$RANCHER_DEBUG" == "true" ]; then set -x; fi
 
 err() {
@@ -96,11 +96,6 @@ ismounted() {
     else
         echo "0"
     fi
-}
-
-init_nfs_client_service() {
-    rpcbind
-    rpc.statd
 }
 
 unset_aws_credentials_env() {

@@ -9,8 +9,6 @@ elif [ -e "$(dirname $0)/../common/common.sh" ]; then
     source $(dirname $0)/../common/common.sh
 fi
 
-set +e
-
 mount_default_share() {
     local mntDest=$1
 
@@ -56,7 +54,6 @@ unmount_default_share() {
 
 init()
 {
-    init_nfs_client_service
     print_success
 }
 
