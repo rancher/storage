@@ -126,10 +126,10 @@ func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
 		response.Err = err.Error()
 		return response
 	}
-	if vol != nil {	
+	if vol != nil {
 		response.Volume = vol
 	}
-	
+
 	return response
 }
 
@@ -175,9 +175,9 @@ func (d *RancherStorageDriver) isMounted(path string) (bool, error) {
 
 func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Response {
 	logrus.WithFields(logrus.Fields{
-		"name":   request.Name,
+		"name": request.Name,
 	}).Info("mount.request")
-	
+
 	response := volume.Response{}
 	defer logResponse("mount", &response)
 
@@ -229,7 +229,7 @@ func (d *RancherStorageDriver) getFsType(vol *client.Volume) string {
 
 func (d *RancherStorageDriver) Unmount(request volume.UnmountRequest) volume.Response {
 	logrus.WithFields(logrus.Fields{
-		"name":   request.Name,
+		"name": request.Name,
 	}).Info("unmount.request")
 
 	response := volume.Response{}

@@ -21,7 +21,7 @@ var goodStates = map[string]bool{
 	"activating":   true,
 	"deactivating": true,
 	"detached":     true,
-//	"removing":     true,
+	"removing":     true,
 }
 
 type RancherState struct {
@@ -67,8 +67,8 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 	for tries := 1; err != nil; tries++ {
 		if tries == 10 {
 			return errors.Wrap(err, "Max tries reached")
-		}		
-		
+		}
+
 		_, vol, err = r.getAny(name)
 
 		if err != nil {
