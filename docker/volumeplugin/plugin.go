@@ -1,23 +1,17 @@
 package volumeplugin
 
 import (
-	"bufio"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"time"
 
 	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/mount"
 
 	"github.com/Sirupsen/logrus"
 	dockerClient "github.com/docker/engine-api/client"
-	"github.com/docker/engine-api/types"
-	"github.com/docker/engine-api/types/events"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
-	"golang.org/x/net/context"
 )
 
 var errNoSuchVolume = errors.New("No such volume")
@@ -128,13 +122,14 @@ func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
 	//defer logResponse("get", &response)
 
 	vol, _, err := d.state.Get(request.Name)
+	if err != nil {
+		response.Err = err.Error()
+		return response
+	}
 	if vol != nil {	
 		response.Volume = vol
 	}
-	if err != nil {
-		response.Err = err.Error()
-	}
-
+	
 	return response
 }
 

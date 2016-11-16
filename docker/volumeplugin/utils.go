@@ -28,8 +28,10 @@ func logResponse(action string, response *volume.Response) {
 	}
 	if response.Err != "" {
 		fields["error"] = response.Err
+		logrus.WithFields(fields).Errorf("%s.response", action)
+	} else {
+		logrus.WithFields(fields).Infof("%s.response", action)
 	}
-	logrus.WithFields(fields).Infof("%s.response", action)
 }
 
 func volErr2(message string, err error) volume.Response {
