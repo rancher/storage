@@ -186,6 +186,9 @@ func (d *RancherStorageDriver) isMounted(path string) (bool, error) {
 }
 
 func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Response {
+	d.mountLock.Lock()
+	defer d.mountLock.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"name": request.Name,
 	}).Info("mount.request")
