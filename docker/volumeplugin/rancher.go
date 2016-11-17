@@ -163,14 +163,6 @@ func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) 
 	return nil, nil, errNoSuchVolume
 }
 
-func (r *RancherState) Delete(name string) error {
-	_, vol, err := r.Get(name)
-	if err != nil {
-		return err
-	}
-	return r.client.Volume.Delete(vol)
-}
-
 func volToVol(vol client.Volume) *volume.Volume {
 	result := &volume.Volume{
 		Name:   vol.Name,
