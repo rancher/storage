@@ -38,7 +38,7 @@ func NewRancherState(driver string, client *client.RancherClient) (*RancherState
 	}
 	driverID, err := getDriverID(driver, client)
 	if err != nil {
-		return nil, errors.Wrap(err, "getting host ID")
+		return nil, errors.Wrap(err, "getting driver ID")
 	}
 
 	logrus.Infof("Running on host %s(%s) with driver %s(%s)", host.Hostname, host.Id, driver, driverID)
