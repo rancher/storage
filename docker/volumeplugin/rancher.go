@@ -3,6 +3,7 @@ package volumeplugin
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
@@ -61,27 +62,35 @@ func (r *RancherState) IsCreated(name string) (bool, error) {
 }
 
 func (r *RancherState) Save(name string, options map[string]string) error {
+	// Wait for the volume to be created by Rancher
 	_, vol, err := r.getAny(name)
-	if err == errNoSuchVolume {
-		logrus.Infof("Create volume name=%s in Rancher", name)
-		_, err = r.client.Volume.Create(&client.Volume{
-			Name:            name,
-			StorageDriverId: r.driverID,
-			DriverOpts:      toMapInterface(options),
-			HostId:          r.hostID,
-		})
-		return err
-	} else if err == nil {
-		logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
-		_, err = r.client.Volume.Update(vol, &client.Volume{
-			Name:            name,
-			Driver:          r.driver,
-			StorageDriverId: r.driverID,
-			DriverOpts:      toMapInterface(options),
-			HostId:          r.hostID,
-		})
-		return err
+	for tries := 1; err != nil; tries++ {
+		if tries == 30 {
+			return errors.Wrap(err, "Max tries reached")
+		}
+
+		_, vol, err = r.getAny(name)
+
+		if err != nil {
+			if err == errNoSuchVolume {
+				time.Sleep(time.Second)
+				continue
+			} else {
+				return err
+			}
+		} else {
+			break
+		}
 	}
+
+	//logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
+	_, err = r.client.Volume.Update(vol, &client.Volume{
+		Name:            name,
+		Driver:          r.driver,
+		StorageDriverId: r.driverID,
+		DriverOpts:      toMapInterface(options),
+		HostId:          r.hostID,
+	})
 	return err
 }
 
@@ -139,6 +148,10 @@ func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) 
 	})
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if len(vols.Data) > 1 {
+		logrus.Warnf("%d volumes with name=%s found in Rancher", len(vols.Data), name)
 	}
 
 	for _, vol := range vols.Data {

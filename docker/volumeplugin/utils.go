@@ -10,6 +10,30 @@ import (
 	"github.com/rancher/go-rancher/v2"
 )
 
+func logRequest(action string, request *volume.Request) {
+	fields := logrus.Fields{}
+	if request.Name != "" {
+		fields["name"] = request.Name
+	}
+	if len(request.Options) > 0 {
+		fields["options"] = request.Options
+	}
+	logrus.WithFields(fields).Infof("%s.request", action)
+}
+
+func logResponse(action string, response *volume.Response) {
+	fields := logrus.Fields{}
+	if response.Mountpoint != "" {
+		fields["mountpoint"] = response.Mountpoint
+	}
+	if response.Err != "" {
+		fields["error"] = response.Err
+		logrus.WithFields(fields).Errorf("%s.response", action)
+	} else {
+		logrus.WithFields(fields).Infof("%s.response", action)
+	}
+}
+
 func volErr2(message string, err error) volume.Response {
 	return volume.Response{
 		Err: errors.Wrap(err, message).Error(),
@@ -38,17 +62,6 @@ func getOptions(vol *client.Volume) map[string]string {
 		result[k] = fmt.Sprint(v)
 	}
 	return result
-}
-
-func volToResponse(err error, vol *volume.Volume) volume.Response {
-	if err != nil {
-		return volErr(err)
-	}
-
-	logrus.Infof("Response: %v", vol)
-	return volume.Response{
-		Volume: vol,
-	}
 }
 
 func fold(data ...map[string]string) map[string]string {

@@ -25,7 +25,8 @@ wait_fs_transition() {
     local end_state=$2
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
+        local fileSystems
+        fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to describe fs ${FSID}: ${fileSystems}"
         fi
@@ -43,7 +44,8 @@ wait_mount_target_transition() {
     local end_state=$2
     while [ "${current_state}" == "${start_state}" ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local mountTargets=`aws efs describe-mount-targets --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+        local mountTargets
+        mountTargets=`aws efs describe-mount-targets --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to describe mount target ${MOUNT_TARGET_ID}: ${mountTargets}"
         fi
@@ -59,7 +61,8 @@ wait_mount_target_deleting() {
     local num=1
     while [ "${num}" == 1 ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
-        local fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
+        local fileSystems
+        fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
             exit 1
@@ -68,9 +71,7 @@ wait_mount_target_deleting() {
     done
 }
 
-init()
-{
-    init_nfs_client_service
+init() {
     print_success
 }
 
@@ -79,12 +80,6 @@ create() {
         print_success
         exit 0
     fi
-
-    if [ -z "${OPTS[creationToken]}" ]; then
-        print_error "creationToken is required"
-    fi
-
-    local creationToken="--creation-token ${OPTS[creationToken]}"
 
     if [ -z "${OPTS[name]}" ]; then
         print_error "name is required"
@@ -100,7 +95,8 @@ create() {
     get_meta_data
 
     # create a EFS FS using aws-cli
-    local fs=`aws efs create-file-system --region ${EC2_REGION} ${creationToken} ${performanceMode} 2>&1`
+    local fs
+    fs=`aws efs create-file-system --region ${EC2_REGION} --creation-token ${OPTS[name]} ${performanceMode} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: ${fs}"
     fi
@@ -111,20 +107,23 @@ create() {
     # create a security group for mount target
     local description="From cattle EFS driver, SG for mount target of EFS: ${FSID}"
     local groupName="SG-Mount-Target-EFS-${FSID}"
-    local mtSG=`aws ec2 create-security-group --region ${EC2_REGION} --vpc-id ${VPC_ID} --group-name ${groupName} --description "${description}" 2>&1`
+    local mtSG
+    mtSG=`aws ec2 create-security-group --region ${EC2_REGION} --vpc-id ${VPC_ID} --group-name ${groupName} --description "${description}" 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: create-security-group. ${mtSG}"
     fi
     local mountTargetSGID=$(echo ${mtSG} | jq -r '.GroupId')
 
     # open NFS4.1 port 2049 on the security group just created
-    local error=`aws ec2 authorize-security-group-ingress --region ${EC2_REGION} --group-id ${mountTargetSGID} --protocol tcp --port 2049 --cidr 0.0.0.0/0 2>&1`
+    local error
+    error=`aws ec2 authorize-security-group-ingress --region ${EC2_REGION} --group-id ${mountTargetSGID} --protocol tcp --port 2049 --cidr 0.0.0.0/0 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: authorize-security-group-ingress for SG ${mountTargetSGID}. ${error}"
     fi
 
     # create a mount target for the EFS
-    local fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${mountTargetSGID} 2>&1`
+    local fsMountTarget
+    fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${mountTargetSGID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed in create: ${fsMountTarget}"
     fi
@@ -166,7 +165,8 @@ delete() {
 
     get_meta_data
 
-    local error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+    local error
+    error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to delete mount target ${MOUNT_TARGET_ID}. ${error}"
     fi
@@ -174,12 +174,12 @@ delete() {
     wait_mount_target_deleting
 
     local mountTargetSGID=${OPTS[mountTargetSGID]}
-    local error=`aws ec2 delete-security-group --region ${EC2_REGION} --group-id ${mountTargetSGID} 2>&1`
+    error=`aws ec2 delete-security-group --region ${EC2_REGION} --group-id ${mountTargetSGID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to delete mount target security group ${mountTargetSGID}. ${error}"
     fi
 
-    local error=`aws efs delete-file-system --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
+    error=`aws efs delete-file-system --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to delete volume ${FSID}. ${error}"
     fi
@@ -200,10 +200,6 @@ mountdest() {
         print_error "fsid is required"
     fi
 
-    if [ -z "${OPTS[export]}" ]; then
-        print_error "export is required"
-    fi
-
     local mntOptions="-o vers=4.1"
     if [ ! -z "${OPTS[mntOptions]}" ]; then
         mntOptions="-o ${OPTS[mntOptions]}"
@@ -220,10 +216,10 @@ mountdest() {
 
     efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
     mkdir -p "${MNT_DEST}"
-    get_host_process_pid
-    local error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+    local error
+    error=`mount -t nfs4 ${mntOptions} ${efsDNSName}:/ ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed to mount ${efsDNSName}:${OPTS[export]} at ${MNT_DEST}. ${error}"
+        print_error "Failed to mount ${efsDNSName}:/ at ${MNT_DEST}. ${error}"
     fi
 
     print_success
@@ -235,7 +231,8 @@ unmount() {
         exit 0
     fi
 
-    local error=`umount ${MNT_DEST} 2>&1`
+    local error
+    error=`umount ${MNT_DEST} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to unmount volume at ${MNT_DEST}. ${error}"
     fi

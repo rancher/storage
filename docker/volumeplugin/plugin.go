@@ -79,19 +79,24 @@ func (d *RancherStorageDriver) init() error {
 }
 
 func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
-	logrus.Infof("Docker Create request: %v", request)
+	logRequest("create", &request)
+
+	response := volume.Response{}
+	defer logResponse("create", &response)
 
 	if created, err := d.state.IsCreated(request.Name); err != nil {
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	} else if created {
-		return volume.Response{}
+		return response
 	}
 
 	result := request.Options
 	if d.CreateSupported {
 		cmdOutput, err := d.exec("create", toArgs(request.Name, request.Options))
 		if err != nil {
-			return volErr(err)
+			response.Err = err.Error()
+			return response
 		}
 		result = fold(result, cmdOutput.Options)
 	}
@@ -99,50 +104,71 @@ func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 	if err := d.state.Save(request.Name, result); err != nil {
 		logrus.Errorf("Save volume name=%s failed, err: %s", request.Name, err)
 		d.exec("delete", toArgs(request.Name, result))
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	}
 
-	return volume.Response{}
+	return response
 }
 
 func (d *RancherStorageDriver) List(request volume.Request) volume.Response {
-	logrus.Infof("Docker List request: %v", request)
+	//logRequest("list", &request)
+
+	response := volume.Response{}
+	//defer logResponse("list", &response)
 
 	volumes, err := d.state.List()
 	if err != nil {
-		return volErr(err)
+		response.Err = err.Error()
+	} else {
+		response.Volumes = volumes
 	}
-	return volume.Response{
-		Volumes: volumes,
-	}
+
+	return response
 }
 
 func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
-	logrus.Infof("Docker Get request: %v", request)
+	//logRequest("get", &request)
+
+	response := volume.Response{}
+	//defer logResponse("get", &response)
 
 	vol, _, err := d.state.Get(request.Name)
-	return volToResponse(err, vol)
+	if err != nil {
+		response.Err = err.Error()
+		return response
+	}
+	if vol != nil {
+		response.Volume = vol
+	}
+
+	return response
 }
 
 func (d *RancherStorageDriver) Remove(request volume.Request) volume.Response {
-	logrus.Infof("Docker Remove request: %v", request)
+	logRequest("remove", &request)
+
+	response := volume.Response{}
+	defer logResponse("remove", &response)
 
 	_, rVol, err := d.state.Get(request.Name)
 	if err == errNoSuchVolume {
 		return volume.Response{}
 	} else if err != nil {
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	}
 
 	// Docker removal is fake, unless Rancher initiated removal of resource, then we do it.
 	if rVol.State == "removing" {
 		_, err := d.exec("delete", toArgs(request.Name, getOptions(rVol)))
 		if err != nil {
-			return volErr(err)
+			response.Err = err.Error()
+			return response
 		}
 	}
 
-	return volume.Response{}
+	return response
 }
 
 func (d *RancherStorageDriver) isMounted(path string) (bool, error) {
@@ -163,45 +189,46 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	d.mountLock.Lock()
 	defer d.mountLock.Unlock()
 
-	logrus.Infof("Docker Mount request: %v", request)
+	logrus.WithFields(logrus.Fields{
+		"name": request.Name,
+	}).Info("mount.request")
+
+	response := volume.Response{}
+	defer logResponse("mount", &response)
+
 	_, rVol, err := d.state.Get(request.Name)
 	if err != nil {
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	}
 
 	mntDest := d.getMntDest(request.Name)
 	if mounted, err := d.isMounted(mntDest); err != nil {
-		return volErr(errors.Wrap(err, "checking mounts"))
+		response.Err = errors.Wrap(err, "checking mounts").Error()
+		return response
 	} else if mounted {
 		logrus.Infof("%s already mounted on %s", request.Name, mntDest)
-		return volume.Response{
-			Mountpoint: mntDest,
-		}
+		response.Mountpoint = mntDest
+		return response
 	}
 
 	opts := toArgs(request.Name, getOptions(rVol))
 	cmdOutput, err := d.exec("attach", opts)
 	if err != nil && err != errNotSupported {
 		logrus.Errorf("Failed to attach %s: %v", request.Name, err)
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	}
 
 	os.MkdirAll(mntDest, 0750)
-	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err == errNotSupported {
-		fsType := d.getFsType(rVol)
-		logrus.Infof("Formatting and mounting %s", cmdOutput.Device)
-		if err := d.mounter.FormatAndMount(cmdOutput.Device, mntDest, fsType, []string{}); err != nil {
-			logrus.Errorf("Failed to format and mount %s: %v", request.Name, err)
-			return volErr(errors.Wrap(err, "mount"))
-		}
-	} else if err != nil {
+	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err != nil {
 		logrus.Errorf("Failed to mount %s: %v", request.Name, err)
-		return volErr(err)
+		response.Err = err.Error()
+		return response
 	}
 
-	return volume.Response{
-		Mountpoint: mntDest,
-	}
+	response.Mountpoint = mntDest
+	return response
 }
 
 func (d *RancherStorageDriver) getFsType(vol *client.Volume) string {
@@ -216,9 +243,15 @@ func (d *RancherStorageDriver) getFsType(vol *client.Volume) string {
 }
 
 func (d *RancherStorageDriver) Unmount(request volume.UnmountRequest) volume.Response {
-	logrus.Infof("Docker Unmount request: %v", request)
+	logrus.WithFields(logrus.Fields{
+		"name": request.Name,
+	}).Info("unmount.request")
+
+	response := volume.Response{}
+	defer logResponse("unmount", &response)
+
 	d.kickGC()
-	return volume.Response{}
+	return response
 }
 
 func (d *RancherStorageDriver) unmount(mntDest string) error {
