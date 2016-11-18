@@ -65,7 +65,7 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 	// Wait for the volume to be created by Rancher
 	_, vol, err := r.getAny(name)
 	for tries := 1; err != nil; tries++ {
-		if tries == 10 {
+		if tries == 30 {
 			return errors.Wrap(err, "Max tries reached")
 		}
 
