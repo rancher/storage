@@ -61,7 +61,7 @@ func (r *RancherState) IsCreated(name string) (bool, error) {
 	return true, nil
 }
 
-func (r *RancherState) Save(name string, options map[string]string) error {
+func (r *RancherState) Save(name string, options map[string]string, try int) error {
 	// Wait for the volume to be created by Rancher
 	_, vol, err := r.getAny(name)
 	for tries := 1; err != nil; tries++ {
@@ -83,7 +83,6 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 		}
 	}
 
-	//logrus.Infof("Update volume name=%s state=%s in Rancher", name, vol.State)
 	_, err = r.client.Volume.Update(vol, &client.Volume{
 		Name:            name,
 		Driver:          r.driver,
@@ -91,6 +90,17 @@ func (r *RancherState) Save(name string, options map[string]string) error {
 		DriverOpts:      toMapInterface(options),
 		HostId:          r.hostID,
 	})
+
+	if apiErr, ok := err.(*client.ApiError); ok && apiErr.StatusCode == 409 {
+		if try < 5 {
+			try++
+			wait := try * 2
+			logrus.Warnf("409 Conflict while updating volume %s. Sleeping %s and retrying.", vol.Id, wait)
+			time.Sleep(time.Duration(wait) * time.Second)
+			return r.Save(name, options, try)
+		}
+	}
+
 	return err
 }
 
