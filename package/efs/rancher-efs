@@ -216,8 +216,10 @@ mountdest() {
 
     efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
     mkdir -p "${MNT_DEST}"
+    get_host_process_pid
     local error
-    error=`mount -t nfs4 ${mntOptions} ${efsDNSName}:/ ${MNT_DEST} 2>&1`
+    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+
     if [ $? -ne 0 ]; then
         print_error "Failed to mount ${efsDNSName}:/ at ${MNT_DEST}. ${error}"
     fi

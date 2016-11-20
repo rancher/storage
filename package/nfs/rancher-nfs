@@ -29,7 +29,8 @@ mount_default_share() {
     # mount remote share if not mounted already
     if [ $(ismounted "${mntDest}") == 0 ] ; then
         mkdir -p "${mntDest}"
-        error=`mount "${NFS_SERVER}":"${MOUNT_DIR}" "${mntDest}" 2>&1`
+        get_host_process_pid
+        error=`nsenter -t ${TARGET_PID} -n mount "${NFS_SERVER}":"${MOUNT_DIR}" "${mntDest}" 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${mntOptions} ${NFS_SERVER}:${MOUNT_DIR} ${mntDest}: ${error}"
         fi
@@ -160,8 +161,9 @@ mountdest() {
     # mount remote share if not mounted already
     if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
         mkdir -p "${MNT_DEST}"
+        get_host_process_pid
         local error
-        error=`mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
+        error=`nsenter -t ${TARGET_PID} -n mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${mntOptions} ${mntSrc} ${MNT_DEST}: ${error}"
         fi
