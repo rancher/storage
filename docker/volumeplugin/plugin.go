@@ -101,7 +101,7 @@ func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 		result = fold(result, cmdOutput.Options)
 	}
 
-	if err := d.state.Save(request.Name, result); err != nil {
+	if err := d.state.Save(request.Name, result, 1); err != nil {
 		logrus.Errorf("Save volume name=%s failed, err: %s", request.Name, err)
 		d.exec("delete", toArgs(request.Name, result))
 		response.Err = err.Error()
@@ -112,11 +112,7 @@ func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 }
 
 func (d *RancherStorageDriver) List(request volume.Request) volume.Response {
-	//logRequest("list", &request)
-
 	response := volume.Response{}
-	//defer logResponse("list", &response)
-
 	volumes, err := d.state.List()
 	if err != nil {
 		response.Err = err.Error()
@@ -128,11 +124,7 @@ func (d *RancherStorageDriver) List(request volume.Request) volume.Response {
 }
 
 func (d *RancherStorageDriver) Get(request volume.Request) volume.Response {
-	//logRequest("get", &request)
-
 	response := volume.Response{}
-	//defer logResponse("get", &response)
-
 	vol, _, err := d.state.Get(request.Name)
 	if err != nil {
 		response.Err = err.Error()
