@@ -104,3 +104,8 @@ unset_aws_credentials_env() {
         unset AWS_SECRET_ACCESS_KEY
     fi
 }
+
+get_host_process_pid() {
+    PARENT_PID=$(ps --no-header --pid $$ -o ppid)
+    TARGET_PID=$(ps --no-header --pid ${PARENT_PID} -o ppid)
+}
