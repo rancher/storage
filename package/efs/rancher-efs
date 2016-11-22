@@ -128,6 +128,7 @@ create() {
         print_error "Failed in create: ${fsMountTarget}"
     fi
     MOUNT_TARGET_ID=$(echo ${fsMountTarget} | jq -r '.MountTargetId')
+    local mountTargetIp=$(echo ${fsMountTarget} | jq -r '.IpAddress')
 
     wait_mount_target_transition "creating" "available"
 
@@ -137,7 +138,7 @@ create() {
         print_error "Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${OPTS[name]} failed. ${error}}"
     fi
 
-    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID}
+    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID} mountTargetIp ${mountTargetIp}
 }
 
 delete() {
@@ -168,7 +169,12 @@ delete() {
     local error
     error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed to delete mount target ${MOUNT_TARGET_ID}. ${error}"
+        if [ "$(echo $error | grep 'MountTargetNotFound')" ]; then
+            print_success Mount target does not exist
+            exit 0
+        else
+            print_error "${MOUNT_TARGET_ID}: ${error}"
+        fi
     fi
 
     wait_mount_target_deleting
@@ -214,14 +220,21 @@ mountdest() {
 
     get_meta_data
 
-    efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
+    local efsMountIP="${OPTS[mountTargetIp]}"
+    # Amazon takes a while to make the mount target resolvable via DNS, so...
+    while [ "$efsMountIP" == "" ]; do
+        sleep 1
+        efsMountIP=$(dig +short ${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com)
+    done
+
     mkdir -p "${MNT_DEST}"
     get_host_process_pid
     local error
-    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+
+    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountIP}:${OPTS[export]} ${MNT_DEST} 2>&1`
 
     if [ $? -ne 0 ]; then
-        print_error "Failed to mount ${efsDNSName}:/ at ${MNT_DEST}. ${error}"
+        print_error "Failed to mount ${efsMountIP}:/ at ${MNT_DEST}. ${error}"
     fi
 
     print_success

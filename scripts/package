@@ -23,7 +23,9 @@ for i in */Dockerfile; do
     BASE=$(dirname $i)
     IMAGE=${REPO}/storage-${BASE}:${TAG}
     docker build -f $i -t ${IMAGE} .
-    echo ${IMAGE} >> ../dist/images
+    if [ "$BASE" != "example" ]; then
+        echo ${IMAGE} >> ../dist/images
+    fi
     echo Built ${IMAGE}
 done
 
