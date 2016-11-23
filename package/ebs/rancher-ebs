@@ -144,7 +144,11 @@ create() {
         print_error "Failed in create: create-tags for volume ${VOLUME_ID} Key=Name,Value=${OPTS[name]} failed. ${error}"
     fi
 
-    local device_path=$(do_attach)
+    local device_path
+    device_path=$(do_attach)
+    if [ $? -ne 0 ]; then
+        print_error $device_path
+    fi
 
     error=`mkfs.ext4 -F $device_path 2>&1`
     if [ $? -ne 0 ]; then
@@ -186,7 +190,8 @@ do_attach() {
                 continue
             # unrecoverable error
             else
-                print_error "Failed to attach ebs volume-id ${VOLUME_ID} as device:${device_path} to aws instance-id ${INSTANCE_ID}. ${error}"
+                echo $error
+                exit 1
             fi
         else
             wait_volume_attaching
@@ -216,7 +221,11 @@ attach() {
 
     get_meta_data
 
-    local linux_device_path=$(do_attach)
+    local linux_device_path
+    linux_device_path=$(do_attach)
+    if [ $? -ne 0 ]; then
+        print_error $linux_device_path
+    fi
 
     if [ "$linux_device_path" != "" ]; then
         print_device ${linux_device_path}
