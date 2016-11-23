@@ -222,6 +222,11 @@ mountdest() {
         mntOptions="-o ${OPTS[mntOptions]}"
     fi
 
+    local efsExport="${OPTS[export]}"
+    if [ -z "$efsExport" ]; then
+        efsExport="/"
+    fi
+
     if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
         print_success
         exit 0
@@ -231,11 +236,10 @@ mountdest() {
 
     get_meta_data
 
-    # Amazon takes a while to make the mount target resolvable via DNS, so...
-    local efsMountIP
+    local efsMountDNS="${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com"
+    # Amazon takes a while to make the mount target resolvable via DNS, so wait up to 60 seconds
     for (( i=0; i<60; i=i+1 )); do
-        efsMountIP=$(dig +short ${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com)
-        if [ "$efsMountIP" != "" ]; then
+        if [ "$(dig +short $efsMountDNS)" != "" ]; then
             break
         fi
         sleep 1
@@ -245,10 +249,10 @@ mountdest() {
     get_host_process_pid
     local error
 
-    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountIP}:/ ${MNT_DEST} 2>&1`
+    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountDNS}:${efsExport} ${MNT_DEST} 2>&1`
 
     if [ $? -ne 0 ]; then
-        print_error "Failed to mount ${efsMountIP}:/ at ${MNT_DEST}. ${error}"
+        print_error "Failed to mount ${efsMountDNS}:${efsExport} at ${MNT_DEST}. ${error}"
     fi
 
     print_success
