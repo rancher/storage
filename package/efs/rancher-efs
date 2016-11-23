@@ -72,6 +72,18 @@ wait_mount_target_deleting() {
 }
 
 init() {
+    unset_aws_credentials_env
+
+    get_meta_data
+
+    case $EC2_REGION in
+        us-east-1 ) ;;
+        us-east-2 ) ;;
+        us-west-2 ) ;;
+        eu-west-1 ) ;;
+        * ) print_error EFS unavailable in region $EC2_REGION;;
+    esac
+
     print_success
 }
 
@@ -128,7 +140,6 @@ create() {
         print_error "Failed in create: ${fsMountTarget}"
     fi
     MOUNT_TARGET_ID=$(echo ${fsMountTarget} | jq -r '.MountTargetId')
-    local mountTargetIp=$(echo ${fsMountTarget} | jq -r '.IpAddress')
 
     wait_mount_target_transition "creating" "available"
 
@@ -138,7 +149,7 @@ create() {
         print_error "Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${OPTS[name]} failed. ${error}}"
     fi
 
-    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID} mountTargetIp ${mountTargetIp}
+    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID}
 }
 
 delete() {
@@ -220,18 +231,21 @@ mountdest() {
 
     get_meta_data
 
-    local efsMountIP="${OPTS[mountTargetIp]}"
     # Amazon takes a while to make the mount target resolvable via DNS, so...
-    while [ "$efsMountIP" == "" ]; do
-        sleep 1
+    local efsMountIP
+    for (( i=0; i<60; i=i+1 )); do
         efsMountIP=$(dig +short ${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com)
+        if [ "$efsMountIP" != "" ]; then
+            break
+        fi
+        sleep 1
     done
 
     mkdir -p "${MNT_DEST}"
     get_host_process_pid
     local error
 
-    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountIP}:${OPTS[export]} ${MNT_DEST} 2>&1`
+    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountIP}:/ ${MNT_DEST} 2>&1`
 
     if [ $? -ne 0 ]; then
         print_error "Failed to mount ${efsMountIP}:/ at ${MNT_DEST}. ${error}"
