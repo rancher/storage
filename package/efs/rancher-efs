@@ -72,6 +72,18 @@ wait_mount_target_deleting() {
 }
 
 init() {
+    unset_aws_credentials_env
+
+    get_meta_data
+
+    case $EC2_REGION in
+        us-east-1 ) ;;
+        us-east-2 ) ;;
+        us-west-2 ) ;;
+        eu-west-1 ) ;;
+        * ) print_error EFS unavailable in region $EC2_REGION;;
+    esac
+
     print_success
 }
 
@@ -168,7 +180,12 @@ delete() {
     local error
     error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed to delete mount target ${MOUNT_TARGET_ID}. ${error}"
+        if [ "$(echo $error | grep 'MountTargetNotFound')" ]; then
+            print_success Mount target does not exist
+            exit 0
+        else
+            print_error "${MOUNT_TARGET_ID}: ${error}"
+        fi
     fi
 
     wait_mount_target_deleting
@@ -205,6 +222,11 @@ mountdest() {
         mntOptions="-o ${OPTS[mntOptions]}"
     fi
 
+    local efsExport="${OPTS[export]}"
+    if [ -z "$efsExport" ]; then
+        efsExport="/"
+    fi
+
     if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
         print_success
         exit 0
@@ -214,14 +236,23 @@ mountdest() {
 
     get_meta_data
 
-    efsDNSName=${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com
+    local efsMountDNS="${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com"
+    # Amazon takes a while to make the mount target resolvable via DNS, so wait up to 60 seconds
+    for (( i=0; i<60; i=i+1 )); do
+        if [ "$(dig +short $efsMountDNS)" != "" ]; then
+            break
+        fi
+        sleep 1
+    done
+
     mkdir -p "${MNT_DEST}"
     get_host_process_pid
     local error
-    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsDNSName}:${OPTS[export]} ${MNT_DEST} 2>&1`
+
+    error=`nsenter -t $TARGET_PID -n mount -t nfs4 ${mntOptions} ${efsMountDNS}:${efsExport} ${MNT_DEST} 2>&1`
 
     if [ $? -ne 0 ]; then
-        print_error "Failed to mount ${efsDNSName}:/ at ${MNT_DEST}. ${error}"
+        print_error "Failed to mount ${efsMountDNS}:${efsExport} at ${MNT_DEST}. ${error}"
     fi
 
     print_success
