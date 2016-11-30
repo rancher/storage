@@ -122,13 +122,29 @@ create() {
         type_option="--volume-type ${type}"
     fi
 
+    local snapshot=${OPTS[snapshotID]}
+    local snapshot_option=""
+    if [ ! -z "${snapshot}" ]; then
+        snapshot_option="--snapshot-id ${snapshot}"
+    fi
+
+    local encrypted=${OPTS[encrypted]}
+    local encrypted_option=""
+    if [ "${encrypted}" == "true" ]; then
+      if [ -z "${OPTS[kmsKeyId]}" ]; then
+          print_error "kmsKeyId is required for an encrypted volume"
+      else
+          encrypted_option="--encrypted --kms-key-id ${OPTS[kmsKeyId]}"
+      fi
+    fi
+
     unset_aws_credentials_env
 
     get_meta_data
 
     # create a EBS volume using aws-cli
     local volume
-    volume=`aws ec2 create-volume --region ${EC2_REGION} --size ${OPTS[size]} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} 2>&1`
+    volume=`aws ec2 create-volume --region ${EC2_REGION} --size ${OPTS[size]} --availability-zone ${EC2_AVAIL_ZONE} ${type_option} ${iops_option} ${snapshot_option} ${encrypted_option} 2>&1`
     if [ $? -ne 0 ]; then
         # now volume is the error message
         print_error "Failed in create: ${volume}"
