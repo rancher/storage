@@ -19,6 +19,11 @@ fi
 > ../dist/images
 
 cp ../bin/storage .
+
+SSL_SCRIPT_COMMIT=98660ada3d800f653fc1f105771b5173f9d1a019
+curl -sLf https://raw.githubusercontent.com/rancher/rancher/${SSL_SCRIPT_COMMIT}/server/bin/update-rancher-ssl > ../package/common/update-rancher-ssl
+chmod +x ../package/common/update-rancher-ssl
+
 for i in */Dockerfile; do
     BASE=$(dirname $i)
     IMAGE=${REPO}/storage-${BASE}:${TAG}
@@ -28,4 +33,3 @@ for i in */Dockerfile; do
     fi
     echo Built ${IMAGE}
 done
-
