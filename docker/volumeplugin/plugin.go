@@ -177,6 +177,42 @@ func (d *RancherStorageDriver) isMounted(path string) (bool, error) {
 	return false, nil
 }
 
+func (d *RancherStorageDriver) doAttach(name, opts string) (string, error) {
+	cmdOutput, err := d.exec("attach", opts)
+	if err != nil && err != errNotSupported {
+		logrus.Errorf("Failed to attach, opts==%s: %v", opts, err)
+		return "", err
+	}
+
+	return cmdOutput.Device, nil
+}
+
+func (d *RancherStorageDriver) Attach(request AttachRequest) volume.Response {
+	d.mountLock.Lock()
+	defer d.mountLock.Unlock()
+
+	logrus.WithFields(logrus.Fields{
+		"name": request.Name,
+	}).Info("attach.request")
+
+	response := volume.Response{}
+	defer logResponse("attach", &response)
+
+	_, rVol, err := d.state.Get(request.Name)
+	if err != nil {
+		response.Err = err.Error()
+		return response
+	}
+
+	opts := toArgs(request.Name, getOptions(rVol))
+	if _, err := d.doAttach(request.Name, opts); err != nil {
+		response.Err = err.Error()
+		return response
+	}
+
+	return response
+}
+
 func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Response {
 	d.mountLock.Lock()
 	defer d.mountLock.Unlock()
@@ -205,7 +241,7 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	}
 
 	opts := toArgs(request.Name, getOptions(rVol))
-	cmdOutput, err := d.exec("attach", opts)
+	device, err := d.doAttach(request.Name, opts)
 	if err != nil && err != errNotSupported {
 		logrus.Errorf("Failed to attach %s: %v", request.Name, err)
 		response.Err = err.Error()
@@ -213,7 +249,7 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	}
 
 	os.MkdirAll(mntDest, 0750)
-	if _, err := d.exec("mount", mntDest, cmdOutput.Device, opts); err != nil {
+	if _, err := d.exec("mount", mntDest, device, opts); err != nil {
 		logrus.Errorf("Failed to mount %s: %v", request.Name, err)
 		response.Err = err.Error()
 		return response

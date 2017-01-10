@@ -115,5 +115,6 @@ func start(c *cli.Context) error {
 			logrus.Fatalf("Error while running healthcheck [%v]", err)
 		}()
 	}
+	volumeplugin.ExtendHandler(h, d)
 	return h.ServeUnix("root", driverName)
 }
