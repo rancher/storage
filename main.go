@@ -16,6 +16,10 @@ import (
 
 var VERSION = "v0.0.0-dev"
 
+const (
+	inBandAttachParam = "in-band-attach"
+)
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "storage"
@@ -51,6 +55,10 @@ func main() {
 			Name:  "healthcheck-interval",
 			Value: 5000,
 			Usage: "set the frequency of performing healthchecks",
+		},
+		cli.BoolTFlag{ // by default, true
+			Name:  inBandAttachParam,
+			Usage: "is attach called during mount",
 		},
 		cli.IntFlag{
 			Name:  "healthcheck-port",
@@ -92,7 +100,7 @@ func start(c *cli.Context) error {
 	if driverName == "" {
 		return errors.New("--driver-name is required")
 	}
-	d, err := volumeplugin.NewRancherStorageDriver(driverName, client, cli)
+	d, err := volumeplugin.NewRancherStorageDriver(driverName, client, cli, c.BoolT(inBandAttachParam))
 	//		DriveName:       driver,
 	//		Basedir:         DefaultBasedir,
 	//		CreateSupported: true,
