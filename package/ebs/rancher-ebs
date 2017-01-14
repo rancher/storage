@@ -138,6 +138,11 @@ create() {
       fi
     fi
 
+    local additional_tags=""
+    if [ ! -z "${OPTS[tags]}" ]; then
+        additional_tags="${OPTS[tags]}"
+    fi
+
     unset_aws_credentials_env
 
     get_meta_data
@@ -155,9 +160,9 @@ create() {
 
     # tag the newly created volume
     local error
-    error=`aws ec2 create-tags --region ${EC2_REGION} --resources ${VOLUME_ID} --tags Key=Name,Value=${OPTS[name]} 2>&1`
+    error=`aws ec2 create-tags --region ${EC2_REGION} --resources ${VOLUME_ID} --tags Key=Name,Value=${OPTS[name]} ${additional_tags} 2>&1`
     if [ $? -ne 0 ]; then
-        print_error "Failed in create: create-tags for volume ${VOLUME_ID} Key=Name,Value=${OPTS[name]} failed. ${error}"
+        print_error "Failed in create: create-tags for volume ${VOLUME_ID} Key=Name,Value=${OPTS[name]} ${additional_tags} failed. ${error}"
     fi
 
     local device_path
