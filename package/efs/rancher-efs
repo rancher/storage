@@ -92,7 +92,7 @@ create() {
         print_success
         exit 0
     fi
-
+    
     if [ -z "${OPTS[name]}" ]; then
         print_error "name is required"
     fi
@@ -106,6 +106,15 @@ create() {
 
     get_meta_data
 
+    # Check if an EFS volume with the same creation token exists
+    local existing_fs
+    existing_fs=`aws efs describe-file-systems --region ${EC2_REGION} --creation-token ${OPTS[name]} | grep -c ${OPTS[name]}`
+    
+    if [ $existing_fs -gt 0 ]; then
+        print_success
+        exit 0
+    fi
+    
     # create a EFS FS using aws-cli
     local fs
     fs=`aws efs create-file-system --region ${EC2_REGION} --creation-token ${OPTS[name]} ${performanceMode} 2>&1`
@@ -116,23 +125,34 @@ create() {
 
     wait_fs_transition "creating" "available"
 
-    # create a security group for mount target
-    local description="From cattle EFS driver, SG for mount target of EFS: ${FSID}"
-    local groupName="SG-Mount-Target-EFS-${FSID}"
-    local mtSG
-    mtSG=`aws ec2 create-security-group --region ${EC2_REGION} --vpc-id ${VPC_ID} --group-name ${groupName} --description "${description}" 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed in create: create-security-group. ${mtSG}"
-    fi
-    local mountTargetSGID=$(echo ${mtSG} | jq -r '.GroupId')
+    # Use an existing security group if that is passed; else create a new security group
+    local mountTargetSGID
+    local useExistingSecGrp=true
+    
+    if [ ! -z "${OPTS[mountTargetSGID]}" ]; then
+        mountTargetSGID=${OPTS[mountTargetSGID]}
+    else
+         # create a security group for mount target
+        local description="From cattle EFS driver, SG for mount target of EFS: ${FSID}"
+        local groupName="SG-Mount-Target-EFS-${FSID}"
+        local mtSG
+        mtSG=`aws ec2 create-security-group --region ${EC2_REGION} --vpc-id ${VPC_ID} --group-name ${groupName} --description "${description}" 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed in create: create-security-group. ${mtSG}"
+        fi
+        
+        mountTargetSGID=$(echo ${mtSG} | jq -r '.GroupId')
 
-    # open NFS4.1 port 2049 on the security group just created
-    local error
-    error=`aws ec2 authorize-security-group-ingress --region ${EC2_REGION} --group-id ${mountTargetSGID} --protocol tcp --port 2049 --cidr 0.0.0.0/0 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed in create: authorize-security-group-ingress for SG ${mountTargetSGID}. ${error}"
+        # open NFS4.1 port 2049 on the security group just created
+        local error
+        error=`aws ec2 authorize-security-group-ingress --region ${EC2_REGION} --group-id ${mountTargetSGID} --protocol tcp --port 2049 --cidr 0.0.0.0/0 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed in create: authorize-security-group-ingress for SG ${mountTargetSGID}. ${error}"
+        fi
+        
+        useExistingSecGrp=false
     fi
-
+    
     # create a mount target for the EFS
     local fsMountTarget
     fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${FSID} --subnet-id ${SUBNET_ID} --security-group ${mountTargetSGID} 2>&1`
@@ -149,7 +169,7 @@ create() {
         print_error "Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${OPTS[name]} failed. ${error}}"
     fi
 
-    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID}
+    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID} useExistingSecGrp ${useExistingSecGrp}
 }
 
 delete() {
