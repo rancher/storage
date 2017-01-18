@@ -247,7 +247,7 @@ mountdest() {
         efsExport="/"
     fi
 
-    if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
+    if [ $(ismounted "${MNT_DEST}") == 1 ]; then
         print_success
         exit 0
     fi
@@ -256,6 +256,32 @@ mountdest() {
 
     get_meta_data
 
+    local isMountPointAlreadyCreated=false
+    
+    # get the list of available subnets and store it into array named 'subnetMounts'
+    mapfile -n 0 -t subnetMounts < <(aws efs describe-mount-targets --region ${EC2_REGION}  --file-system-id ${OPTS[fsid]} | jq -c -r '.MountTargets[].SubnetId')
+
+    # Check if the EFS is already mounted in the current subnet
+    for ((i=0;i < ${#subnetMounts[@]} ; i+=1)) do
+        if [ "${SUBNET_ID}" == "${subnetMounts[i]}" ]; then
+            isMountPointAlreadyCreated=true
+        fi
+    done
+    
+    # Create a new mount-target in current region and subnet if one doesn't already exist
+    if [ "$isMountPointAlreadyCreated" == "false" ]; then
+        # create a mount target for the EFS
+        local fsMountTarget
+        fsMountTarget=`aws efs create-mount-target --region ${EC2_REGION} --file-system-id ${OPTS[fsid]} --subnet-id ${SUBNET_ID} --security-group ${OPTS[mountTargetSGID]} 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed in create: ${fsMountTarget}"
+        fi
+        
+        MOUNT_TARGET_ID=$(echo ${fsMountTarget} | jq -r '.MountTargetId')
+        
+        wait_mount_target_transition "creating" "available"
+    fi
+    
     local efsMountDNS="${EC2_AVAIL_ZONE}.${OPTS[fsid]}.efs.${EC2_REGION}.amazonaws.com"
     # Amazon takes a while to make the mount target resolvable via DNS, so wait up to 60 seconds
     for (( i=0; i<60; i=i+1 )); do
