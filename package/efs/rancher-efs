@@ -201,7 +201,7 @@ delete() {
 
     get_meta_data
 
-    # get the list of available subnets and store it into array named 'mountTargetsArray'
+    # get the list of available mount targets and store it into array named 'mountTargetsArray'
     mapfile -n 0 -t mountTargetsArray < <(aws efs describe-mount-targets --region ${EC2_REGION}  --file-system-id ${FSID} | jq -c -r '.MountTargets[].MountTargetId')
 
     local error
