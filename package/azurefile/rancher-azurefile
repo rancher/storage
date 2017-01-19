@@ -1,0 +1,134 @@
+#!/bin/bash
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+
+get_env() {
+    curl -sS http://rancher-metadata/latest/self/stack/environment_name
+}
+
+get_share_name() {
+    local share="${OPTS[name]//_/-}"
+
+    if [ "${OPTS[share]}" ]; then
+        share="${OPTS[share]}"
+    fi
+    # template substiution for environment name
+    local env=$(get_env)
+    echo -n "${share}" | sed -e "s/%{environment_name}/${env}/"
+}
+
+init()
+{
+    print_success "init"
+}
+
+create() {
+    local share=$(get_share_name)
+    local msg=$(azurefile-share.py create ${share} 2>&1)
+    print_success $msg
+}
+
+delete() {
+    local msg="delete_on_terminate not set. Not deleted"
+    local share=$(get_share_name)
+    if [ "${OPTS[delete_on_terminate]}" ]; then
+        msg=$(azurefile-share.py delete ${share} 2>&1)
+    fi
+    print_success $msg
+}
+
+attach() {
+    print_not_supported "attach"
+}
+
+detach() {
+    print_not_supported "detach"
+}
+
+mountdest() {
+    local mntOptions=()
+    mntOptions+=("vers=3.0")
+    if [ -z "${AZURE_STORAGE_ACCOUNT}" ]; then
+        print_error "Failed: No environment variable AZURE_STORAGE_ACCOUNT found"
+    else
+        mntOptions+=("username=${AZURE_STORAGE_ACCOUNT}")
+    fi
+    if [ -z "${AZURE_STORAGE_ACCOUNT_KEY}" ]; then
+        print_error "Failed: No environment variable AZURE_STORAGE_ACCOUNT_KEY found"
+    else
+        mntOptions+=("password=${AZURE_STORAGE_ACCOUNT_KEY}")
+    fi
+
+    if [ "${OPTS[file_mode]}" ]; then
+        mntOptions+=("file_mode=${OPTS[file_mode]}")
+    else
+        mntOptions+=("file_mode=0644")
+    fi
+
+    if [ "${OPTS[dir_mode]}" ]; then
+        mntOptions+=("dir_mode=${OPTS[dir_mode]}")
+    else
+        mntOptions+=("dir_mode=0755")
+    fi
+
+    if [ "${OPTS[uid]}" ]; then
+        mntOptions+=("uid=${OPTS[uid]}")
+    else
+        mntOptions+=("uid=0")
+    fi
+
+    if [ "${OPTS[gid]}" ]; then
+        mntOptions+=("gid=${OPTS[gid]}")
+    else
+        mntOptions+=("gid=0")
+    fi
+
+    if [ "${OPTS[mount_opts]}" ]; then
+        mntOptions+=("${OPTS[mount_options]}")
+    fi
+
+    local share=$(get_share_name)
+    local srcURI="//${AZURE_STORAGE_ACCOUNT}.file.core.windows.net"
+    local mntSrc="${srcURI}/${share}"
+
+    # mount remote share if not mounted already
+    if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
+        mkdir -p "${MNT_DEST}"
+        get_host_process_pid
+        local error
+        local opts=$(join_by , "${mntOptions[@]}")
+        error=`nsenter -t ${TARGET_PID} -n mount -t cifs -o ${opts} ${mntSrc} ${MNT_DEST} 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed mount -t cifs -o ${opts} ${mntSrc} ${MNT_DEST}: ${error}"
+        fi
+    fi
+
+    print_success "mount Successful"
+}
+
+unmount() {
+    if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
+        error=`umount "${MNT_DEST}" 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed umount ${MNT_DEST}: ${error}"
+        fi
+    fi
+
+    print_success "umount Successful"
+}
+
+join_by() {
+    local IFS="$1"
+    shift
+    echo "$*"
+}
+
+# Every script must call main as such
+main "$@"
