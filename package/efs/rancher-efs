@@ -62,7 +62,7 @@ wait_mount_target_deleting() {
     while [ "${num}" == 1 ]; do
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
         local fileSystems
-        fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
+        fileSystems=`aws efs describe-file-systems --region ${EC2_REGION} --file-system-id ${FSID} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
         if [ $? -ne 0 ]; then
             err "{ \"status\": \"Failure\", \"message\": \"Failed to describe fs ${FSID}: ${fileSystems}\"}"
             exit 1
@@ -127,10 +127,19 @@ create() {
 
     # Use an existing security group if that is passed; else create a new security group
     local mountTargetSGID
-    local useExistingSecGrp=true
+    local useExistingSecGrp
     
-    if [ ! -z "${OPTS[mountTargetSGID]}" ]; then
-        mountTargetSGID=${OPTS[mountTargetSGID]}
+    if [ ! -z "${OPTS[mountTargetSGID]}" ] || [ ! -z "${OPTS[mountTargetSGName]}" ]; then
+        # If security group name is provided then get the group id
+        if [ ! -z "${OPTS[mountTargetSGName]}" ]; then
+            local mountTargetSGIDResponse
+            mountTargetSGIDResponse=`aws ec2 describe-security-groups --region ${EC2_REGION} --filters Name=vpc-id,Values=${VPC_ID} --filters Name=group-name,Values=${OPTS[mountTargetSGName]} --query SecurityGroups[*].{GroupId:GroupId}`
+            mountTargetSGID=$(echo ${mountTargetSGIDResponse} | jq -r '.[].GroupId')
+        else
+            mountTargetSGID=${OPTS[mountTargetSGID]}
+        fi
+        
+        useExistingSecGrp=true
     else
          # create a security group for mount target
         local description="From cattle EFS driver, SG for mount target of EFS: ${FSID}"
@@ -169,7 +178,7 @@ create() {
         print_error "Failed in create: create-tags for EFS ${FSID} Key=Name,Value=${OPTS[name]} failed. ${error}}"
     fi
 
-    print_options created true fsid ${FSID} mountTargetId ${MOUNT_TARGET_ID} mountTargetSGID ${mountTargetSGID} useExistingSecGrp ${useExistingSecGrp}
+    print_options created true fsid ${FSID} mountTargetSGID ${mountTargetSGID} useExistingSecGrp ${useExistingSecGrp}
 }
 
 delete() {
@@ -182,40 +191,48 @@ delete() {
         print_error "fsid is required"
     fi
 
-    if [ -z "${OPTS[mountTargetId]}" ]; then
-        print_error "mountTargetId is required"
-    fi
-
     if [ -z "${OPTS[mountTargetSGID]}" ]; then
         print_error "mountTargetSGID is required"
     fi
 
     FSID=${OPTS[fsid]}
-    MOUNT_TARGET_ID=${OPTS[mountTargetId]}
-
+    
     unset_aws_credentials_env
 
     get_meta_data
 
+    # get the list of available subnets and store it into array named 'mountTargetsArray'
+    mapfile -n 0 -t mountTargetsArray < <(aws efs describe-mount-targets --region ${EC2_REGION}  --file-system-id ${FSID} | jq -c -r '.MountTargets[].MountTargetId')
+
     local error
-    error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
-    if [ $? -ne 0 ]; then
-        if [ "$(echo $error | grep 'MountTargetNotFound')" ]; then
-            print_success Mount target does not exist
-            exit 0
-        else
-            print_error "${MOUNT_TARGET_ID}: ${error}"
+    
+    # delete all the mount points associated with efs file system
+    for ((i=0;i < ${#mountTargetsArray[@]} ; i+=1)) do
+        
+        MOUNT_TARGET_ID=${mountTargetsArray[i]}
+        
+        error=`aws efs delete-mount-target --region ${EC2_REGION} --mount-target-id ${MOUNT_TARGET_ID} 2>&1`
+        if [ $? -ne 0 ]; then
+            if [ "$(echo $error | grep 'MountTargetNotFound')" ]; then
+                print_success Mount target does not exist
+                exit 0
+            else
+                print_error "${MOUNT_TARGET_ID}: ${error}"
+            fi
+        fi
+
+        wait_mount_target_deleting
+    done
+    
+    # Delete the security group if it was created as part of EFS instance creation
+    if [ "${OPTS[useExistingSecGrp]}" == "false" ]; then
+        local mountTargetSGID=${OPTS[mountTargetSGID]}
+        error=`aws ec2 delete-security-group --region ${EC2_REGION} --group-id ${mountTargetSGID} 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed to delete mount target security group ${mountTargetSGID}. ${error}"
         fi
     fi
-
-    wait_mount_target_deleting
-
-    local mountTargetSGID=${OPTS[mountTargetSGID]}
-    error=`aws ec2 delete-security-group --region ${EC2_REGION} --group-id ${mountTargetSGID} 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed to delete mount target security group ${mountTargetSGID}. ${error}"
-    fi
-
+    
     error=`aws efs delete-file-system --region ${EC2_REGION} --file-system-id ${FSID} 2>&1`
     if [ $? -ne 0 ]; then
         print_error "Failed to delete volume ${FSID}. ${error}"
