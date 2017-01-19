@@ -36,7 +36,7 @@ stdout output: {"status":"Success","message":""}
 ```
 
 ##### Delete command
-driver does nothing
+driver deletes the file system
 
 ```
 ./efs delete '{"fsid":"fs-90d12d39"}
@@ -70,24 +70,35 @@ stdout output: {"status":"Success","message":""}
 ### 2. User does not provide fsid
 
 ##### Create command
-user needs to supplies volume name, driver creates a new file system at AWS EFS site and tags it using name.
+User needs to supplies volume name, and an optional security group Id/name which we can use to setup the mount. If the 
+security group name/id is not provided, then we create a new security group with port 2049 open to everyone.
+
+Note: We use the security group name _tag_ and *NOT* the group name.
+
+The driver creates a new file system at AWS EFS site and mounts it in the subnet of the EC2 instance where it is running
+and tags it using name.
+
 The output is the status and newly created fsid etc
 
 ```
-./efs create '{"creationToken":"anystring","name":"vol1","performanceMode":"maxIO"}'
+./efs create '{"creationToken":"anystring","name":"vol1","performanceMode":"maxIO",mountTargetSGName": "target.efs.mount.security.group"}'
 
-name and creationToken key-value pairs must be provided in json_options and performanceMode is optional parameter
+name and creationToken key-value pairs must be provided in json_options and performanceMode & mountTargetSGName are optional parameters.
 
-stdout output: {"status":"Success","options":{"created":true,"fsid":"fs-b59c621c","mountTargetId":"fsmt-b20df41b"}}
+If existing security group Id/Name is passed then we set the _useExistingSecGrp_ to _true_, so that we don't delete the security group
+while deleting the volume.
+```
+{"status":"Success","options":{created": "true", "fsid": "fs-xxxxxxxx”, "mountTargetSGID": "sg-xxxxxxxx”, ”mountTargetSGName":"target.efs.mount.security.group", "name": "efsPubPrivTest03_EFS", "useExistingSecGrp": "true"}}
+```
 
 the options map from the output will be passed in as part of json_input for delete command
 ```
 
 ##### Delete command
-driver deletes created EFS file system
+driver deletes created EFS file system along with the security group if existing security group was not provided to the create command.
 
 ```
-./efs delete '{"created":true,"fsid":"fs-b59c621c","mountTargetId":"fsmt-b20df41b"}'
+./efs delete '{created": "true", "fsid": "fs-xxxxxxxx”, "mountTargetSGID": "sg-xxxxxxxx”, ”mountTargetSGName":"target.efs.mount.security.group", "name": "efsPubPrivTest03_EFS", "useExistingSecGrp": "true"}'
 
 the options map from create command output is passed in to delete command as part of json_input
 
@@ -95,7 +106,9 @@ stdout output: {"status":"Success","message":""}
 ```
 
 #### Mount command
-driver mounts EFS using fsid created at create command phase
+driver mounts EFS using fsid created at create command phase in the availability zone of the EC2 instance where the driver is running.
+
+We check if mount point exists for this EFS volume in the EC2 instance subnet, if not we create a new mount point in the EC2 instance's subnet.
 
 ```
 ./efs mount /home/ubuntu/efsMnt '{"fsid":"fs-b59c621c","export":"/","mntOptions":"ro,vers=4.1"}'
@@ -105,7 +118,7 @@ mntOptions key-value pair is optional for mount, but fsid and export are the mus
 stdout output: {"status":"Success","message":""}
 ```
 
-The result is that us-west-2b.fs-b59c621c.efs.us-west-2.amazonaws.com:/ is mounted to /home/ubuntu/efsMnt
+The result is that <availability zone>.fs-b59c621c.efs.us-west-2.amazonaws.com:/ is mounted to /home/ubuntu/efsMnt
 
 #### Unmount command
 driver unmount EFS file system
