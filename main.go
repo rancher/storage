@@ -116,5 +116,6 @@ func start(c *cli.Context) error {
 		}()
 	}
 	volumeplugin.ExtendHandler(h, d)
-	return h.ServeUnix("root", driverName)
+	volumeplugin.ForceSymlinkInDockerPlugins(driverName)
+	return h.ServeUnix("root", volumeplugin.RancherSocketFile(driverName))
 }
