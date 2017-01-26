@@ -17,11 +17,13 @@ const (
 )
 
 var goodStates = map[string]bool{
-	"active":       true,
-	"activating":   true,
-	"deactivating": true,
-	"detached":     true,
-	"removing":     true,
+	"active":            true,
+	"activating":        true,
+	"deactivating":      true,
+	"detached":          true,
+	"removing":          true,
+	"updating-active":   true,
+	"updating-inactive": true,
 }
 
 type RancherState struct {
@@ -83,19 +85,28 @@ func (r *RancherState) Save(name string, options map[string]string, try int) err
 		}
 	}
 
-	_, err = r.client.Volume.Update(vol, &client.Volume{
+	opts := &client.Volume{
 		Name:            name,
 		Driver:          r.driver,
 		StorageDriverId: r.driverID,
 		DriverOpts:      toMapInterface(options),
 		HostId:          r.hostID,
-	})
+	}
 
-	if apiErr, ok := err.(*client.ApiError); ok && apiErr.StatusCode == 409 {
+	newVol, err := r.client.Volume.Update(vol, opts)
+	if err == nil && (newVol.State == "inactive" || newVol.State == "registering") {
+		_, err = r.client.Volume.ActionUpdate(vol)
+	}
+
+	logrus.WithField("err", err).Infof("Updating volume %s (%s) %s:%s on %s, state %s => %s",
+		opts.Name, vol.Id, opts.Driver, opts.StorageDriverId, opts.HostId,
+		vol.State, newVol.State)
+
+	if err != nil {
 		if try < 5 {
 			try++
 			wait := try * 2
-			logrus.Warnf("409 Conflict while updating volume %s. Sleeping %s and retrying.", vol.Id, wait)
+			logrus.Warnf("Error while updating volume %s. Sleeping %d and retrying: %v", vol.Id, wait, err)
 			time.Sleep(time.Duration(wait) * time.Second)
 			return r.Save(name, options, try)
 		}
