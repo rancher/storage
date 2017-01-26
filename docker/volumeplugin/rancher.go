@@ -126,6 +126,7 @@ func (r *RancherState) List() ([]*volume.Volume, error) {
 }
 
 func isCreated(driver string, vol client.Volume) bool {
+	logrus.Infof("isCreated method: vol.State is: %s", vol.State)
 	return goodStates[vol.State]
 }
 
