@@ -206,12 +206,14 @@ func (d *RancherStorageDriver) Attach(request AttachRequest) volume.Response {
 
 	_, rVol, err := d.state.Get(request.Name)
 	if err != nil {
+		logrus.Errorf("Failed to get volume from rancher, %s: %s", request.Name, err)
 		response.Err = err.Error()
 		return response
 	}
 
 	opts := toArgs(request.Name, getOptions(rVol))
 	if err := d.doAttach(request.Name, opts); err != nil {
+		logrus.Errorf("Failed to doAttach, %s: %s", request.Name, err)
 		response.Err = err.Error()
 		return response
 	}
