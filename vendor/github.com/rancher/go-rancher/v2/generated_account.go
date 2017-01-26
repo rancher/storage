@@ -36,6 +36,8 @@ type Account struct {
 	TransitioningProgress int64 `json:"transitioningProgress,omitempty" yaml:"transitioning_progress,omitempty"`
 
 	Uuid string `json:"uuid,omitempty" yaml:"uuid,omitempty"`
+
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 type AccountCollection struct {
@@ -68,6 +70,8 @@ type AccountOperations interface {
 	ActionRestore(*Account) (*Account, error)
 
 	ActionUpdate(*Account) (*Account, error)
+
+	ActionUpgrade(*Account) (*Account, error)
 }
 
 func newAccountClient(rancherClient *RancherClient) *AccountClient {
@@ -179,6 +183,15 @@ func (c *AccountClient) ActionUpdate(resource *Account) (*Account, error) {
 	resp := &Account{}
 
 	err := c.rancherClient.doAction(ACCOUNT_TYPE, "update", &resource.Resource, nil, resp)
+
+	return resp, err
+}
+
+func (c *AccountClient) ActionUpgrade(resource *Account) (*Account, error) {
+
+	resp := &Account{}
+
+	err := c.rancherClient.doAction(ACCOUNT_TYPE, "upgrade", &resource.Resource, nil, resp)
 
 	return resp, err
 }

@@ -13,6 +13,8 @@ type Project struct {
 
 	Data map[string]interface{} `json:"data,omitempty" yaml:"data,omitempty"`
 
+	DefaultNetworkId string `json:"defaultNetworkId,omitempty" yaml:"default_network_id,omitempty"`
+
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
 	HealthState string `json:"healthState,omitempty" yaml:"health_state,omitempty"`
@@ -24,6 +26,8 @@ type Project struct {
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
 	Orchestration string `json:"orchestration,omitempty" yaml:"orchestration,omitempty"`
+
+	ProjectTemplateId string `json:"projectTemplateId,omitempty" yaml:"project_template_id,omitempty"`
 
 	RemoveTime string `json:"removeTime,omitempty" yaml:"remove_time,omitempty"`
 
@@ -40,6 +44,8 @@ type Project struct {
 	TransitioningProgress int64 `json:"transitioningProgress,omitempty" yaml:"transitioning_progress,omitempty"`
 
 	Uuid string `json:"uuid,omitempty" yaml:"uuid,omitempty"`
+
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 
 	VirtualMachine bool `json:"virtualMachine,omitempty" yaml:"virtual_machine,omitempty"`
 }
@@ -76,6 +82,8 @@ type ProjectOperations interface {
 	ActionSetmembers(*Project, *SetProjectMembersInput) (*SetProjectMembersInput, error)
 
 	ActionUpdate(*Project) (*Account, error)
+
+	ActionUpgrade(*Project) (*Account, error)
 }
 
 func newProjectClient(rancherClient *RancherClient) *ProjectClient {
@@ -196,6 +204,15 @@ func (c *ProjectClient) ActionUpdate(resource *Project) (*Account, error) {
 	resp := &Account{}
 
 	err := c.rancherClient.doAction(PROJECT_TYPE, "update", &resource.Resource, nil, resp)
+
+	return resp, err
+}
+
+func (c *ProjectClient) ActionUpgrade(resource *Project) (*Account, error) {
+
+	resp := &Account{}
+
+	err := c.rancherClient.doAction(PROJECT_TYPE, "upgrade", &resource.Resource, nil, resp)
 
 	return resp, err
 }
