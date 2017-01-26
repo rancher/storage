@@ -11,19 +11,11 @@ type LoadBalancerService struct {
 
 	AssignServiceIpAddress bool `json:"assignServiceIpAddress,omitempty" yaml:"assign_service_ip_address,omitempty"`
 
-	CertificateIds []string `json:"certificateIds,omitempty" yaml:"certificate_ids,omitempty"`
-
-	ConsumedByServiceIds []string `json:"consumedByServiceIds,omitempty" yaml:"consumed_by_service_ids,omitempty"`
-
-	ConsumedServiceIds []string `json:"consumedServiceIds,omitempty" yaml:"consumed_service_ids,omitempty"`
-
 	Created string `json:"created,omitempty" yaml:"created,omitempty"`
 
 	CurrentScale int64 `json:"currentScale,omitempty" yaml:"current_scale,omitempty"`
 
 	Data map[string]interface{} `json:"data,omitempty" yaml:"data,omitempty"`
-
-	DefaultCertificateId string `json:"defaultCertificateId,omitempty" yaml:"default_certificate_id,omitempty"`
 
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
@@ -39,7 +31,9 @@ type LoadBalancerService struct {
 
 	LaunchConfig *LaunchConfig `json:"launchConfig,omitempty" yaml:"launch_config,omitempty"`
 
-	LoadBalancerConfig *LoadBalancerConfig `json:"loadBalancerConfig,omitempty" yaml:"load_balancer_config,omitempty"`
+	LbConfig *LbConfig `json:"lbConfig,omitempty" yaml:"lb_config,omitempty"`
+
+	LinkedServices map[string]interface{} `json:"linkedServices,omitempty" yaml:"linked_services,omitempty"`
 
 	Metadata map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 
@@ -99,7 +93,7 @@ type LoadBalancerServiceOperations interface {
 
 	ActionActivate(*LoadBalancerService) (*Service, error)
 
-	ActionAddservicelink(*LoadBalancerService, *AddRemoveLoadBalancerServiceLinkInput) (*Service, error)
+	ActionAddservicelink(*LoadBalancerService, *AddRemoveServiceLinkInput) (*Service, error)
 
 	ActionCancelupgrade(*LoadBalancerService) (*Service, error)
 
@@ -113,13 +107,13 @@ type LoadBalancerServiceOperations interface {
 
 	ActionRemove(*LoadBalancerService) (*Service, error)
 
-	ActionRemoveservicelink(*LoadBalancerService, *AddRemoveLoadBalancerServiceLinkInput) (*Service, error)
+	ActionRemoveservicelink(*LoadBalancerService, *AddRemoveServiceLinkInput) (*Service, error)
 
 	ActionRestart(*LoadBalancerService, *ServiceRestart) (*Service, error)
 
 	ActionRollback(*LoadBalancerService) (*Service, error)
 
-	ActionSetservicelinks(*LoadBalancerService, *SetLoadBalancerServiceLinksInput) (*Service, error)
+	ActionSetservicelinks(*LoadBalancerService, *SetServiceLinksInput) (*Service, error)
 
 	ActionUpdate(*LoadBalancerService) (*Service, error)
 
@@ -185,7 +179,7 @@ func (c *LoadBalancerServiceClient) ActionActivate(resource *LoadBalancerService
 	return resp, err
 }
 
-func (c *LoadBalancerServiceClient) ActionAddservicelink(resource *LoadBalancerService, input *AddRemoveLoadBalancerServiceLinkInput) (*Service, error) {
+func (c *LoadBalancerServiceClient) ActionAddservicelink(resource *LoadBalancerService, input *AddRemoveServiceLinkInput) (*Service, error) {
 
 	resp := &Service{}
 
@@ -248,7 +242,7 @@ func (c *LoadBalancerServiceClient) ActionRemove(resource *LoadBalancerService) 
 	return resp, err
 }
 
-func (c *LoadBalancerServiceClient) ActionRemoveservicelink(resource *LoadBalancerService, input *AddRemoveLoadBalancerServiceLinkInput) (*Service, error) {
+func (c *LoadBalancerServiceClient) ActionRemoveservicelink(resource *LoadBalancerService, input *AddRemoveServiceLinkInput) (*Service, error) {
 
 	resp := &Service{}
 
@@ -275,7 +269,7 @@ func (c *LoadBalancerServiceClient) ActionRollback(resource *LoadBalancerService
 	return resp, err
 }
 
-func (c *LoadBalancerServiceClient) ActionSetservicelinks(resource *LoadBalancerService, input *SetLoadBalancerServiceLinksInput) (*Service, error) {
+func (c *LoadBalancerServiceClient) ActionSetservicelinks(resource *LoadBalancerService, input *SetServiceLinksInput) (*Service, error) {
 
 	resp := &Service{}
 

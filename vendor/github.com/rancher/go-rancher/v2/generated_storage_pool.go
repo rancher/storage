@@ -21,6 +21,8 @@ type StoragePool struct {
 
 	ExternalId string `json:"externalId,omitempty" yaml:"external_id,omitempty"`
 
+	HostIds []string `json:"hostIds,omitempty" yaml:"host_ids,omitempty"`
+
 	Kind string `json:"kind,omitempty" yaml:"kind,omitempty"`
 
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
@@ -44,6 +46,8 @@ type StoragePool struct {
 	VolumeAccessMode string `json:"volumeAccessMode,omitempty" yaml:"volume_access_mode,omitempty"`
 
 	VolumeCapabilities []string `json:"volumeCapabilities,omitempty" yaml:"volume_capabilities,omitempty"`
+
+	VolumeIds []string `json:"volumeIds,omitempty" yaml:"volume_ids,omitempty"`
 }
 
 type StoragePoolCollection struct {
