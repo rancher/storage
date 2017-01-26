@@ -17,6 +17,7 @@ const (
 )
 
 var goodStates = map[string]bool{
+	"inactive":     true,
 	"active":       true,
 	"activating":   true,
 	"deactivating": true,
@@ -117,7 +118,7 @@ func (r *RancherState) List() ([]*volume.Volume, error) {
 	}
 	result := []*volume.Volume{}
 	for _, vol := range vols.Data {
-		if isCreated(r.driver, vol) {
+		if isCreated(vol) {
 			result = append(result, volToVol(vol))
 		}
 	}
@@ -125,7 +126,7 @@ func (r *RancherState) List() ([]*volume.Volume, error) {
 	return result, nil
 }
 
-func isCreated(driver string, vol client.Volume) bool {
+func isCreated(vol client.Volume) bool {
 	return goodStates[vol.State]
 }
 
@@ -165,7 +166,7 @@ func (r *RancherState) Get(name string) (*volume.Volume, *client.Volume, error) 
 	}
 
 	for _, vol := range vols.Data {
-		if isCreated(r.driver, vol) {
+		if isCreated(vol) {
 			return volToVol(vol), &vol, nil
 		}
 	}

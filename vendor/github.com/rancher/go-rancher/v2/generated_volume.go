@@ -33,11 +33,15 @@ type Volume struct {
 
 	Kind string `json:"kind,omitempty" yaml:"kind,omitempty"`
 
+	Mounts []MountEntry `json:"mounts,omitempty" yaml:"mounts,omitempty"`
+
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
 	RemoveTime string `json:"removeTime,omitempty" yaml:"remove_time,omitempty"`
 
 	Removed string `json:"removed,omitempty" yaml:"removed,omitempty"`
+
+	SizeMb int64 `json:"sizeMb,omitempty" yaml:"size_mb,omitempty"`
 
 	StackId string `json:"stackId,omitempty" yaml:"stack_id,omitempty"`
 
