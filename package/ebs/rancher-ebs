@@ -179,6 +179,20 @@ is_attached() {
     fi
 }
 
+is_attached_by_volume_id() {
+    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=volume-id,Values=${VOLUME_ID} Name=attachment.instance-id,Values=${INSTANCE_ID} Name=attachment.status,Values=attached | jq -r '[.Volumes[].Attachments[]]'`
+    if [ $? -ne 0 ]; then
+        print_error "Failed to describe volumes of instance-id ${INSTANCE_ID}."
+    fi
+
+    if [ $(echo ${attachments} | jq -r '. | length') -eq 1 ]; then
+        local dev=$(echo ${attachments} | jq -r '.[0].Device')
+        echo $(find_matching_linux_device_path "${dev}")
+        return 0
+    fi
+    return 1
+}
+
 do_attach() {
     local device_path=$(find_available_device_path)
     while [ "$device_path" != "" ]; do
@@ -222,6 +236,12 @@ attach() {
     get_meta_data
 
     local linux_device_path
+
+    if linux_device_path=$(is_attached_by_volume_id); then
+        print_device ${linux_device_path}
+        return 0
+    fi
+
     linux_device_path=$(do_attach)
     if [ $? -ne 0 ]; then
         print_error $linux_device_path
