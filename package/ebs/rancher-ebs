@@ -160,9 +160,9 @@ create() {
     print_options created true volumeID ${VOLUME_ID}
 }
 
-is_attached() {
+is_attached_dev() {
+    # device to VOLUME_ID if attached
     local aws_device_path=$1
-    # from device, get VOLUME_ID
     local attachments
     attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
     if [ $? -ne 0 ]; then
@@ -177,6 +177,21 @@ is_attached() {
     else
         return 0
     fi
+}
+
+get_attached_dev() {
+    # VOLUME_ID to device if attached
+    local attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=volume-id,Values=${VOLUME_ID} Name=attachment.instance-id,Values=${INSTANCE_ID} Name=attachment.status,Values=attached | jq -r '[.Volumes[].Attachments[]]'`
+    if [ $? -ne 0 ]; then
+        print_error "Failed to describe volumes of instance-id ${INSTANCE_ID}. ${attachments}"
+    fi
+
+    if [ $(echo ${attachments} | jq -r '. | length') -eq 1 ]; then
+        local dev=$(echo ${attachments} | jq -r '.[0].Device')
+        echo $(find_matching_linux_device_path "${dev}")
+        return 0
+    fi
+    return 1
 }
 
 do_attach() {
@@ -222,7 +237,11 @@ attach() {
     get_meta_data
 
     local linux_device_path
-    linux_device_path=$(do_attach)
+
+    linux_device_path=$(get_attached_dev)
+    if [ $? -ne 0 ]; then
+        linux_device_path=$(do_attach)
+    fi
     if [ $? -ne 0 ]; then
         print_error $linux_device_path
     fi
@@ -241,7 +260,7 @@ detach() {
 
     get_meta_data
 
-    is_attached $aws_device_path
+    is_attached_dev $aws_device_path
     if [ $? -eq 0 ]; then
         do_detach
     fi

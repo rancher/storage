@@ -33,6 +33,19 @@ delete()
     print_success
 }
 
+get_attached_dev()
+{
+    local image=$1
+    local dev=`losetup -a|grep ${image}|cut -d ":" -f 1|head -n 1`
+
+    if [ -z "${dev}" ]
+    then
+            return 1
+    fi
+    echo "$dev"
+    return 0
+}
+
 attach()
 {
     # The OPTS variable will be populated from the input JSON as a map of key/values
@@ -41,7 +54,11 @@ attach()
         print_error "Failed to find ${IMG}"
     fi
 
-    DEVICE=$(losetup --show -f ${IMG})
+    DEVICE=$(get_attached_dev ${IMG})
+    if [ $? -ne 0 ]
+    then
+        DEVICE=$(losetup --show -f ${IMG})
+    fi
 
     print_device $DEVICE
 }
