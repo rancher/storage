@@ -171,9 +171,12 @@ create() {
         print_error $device_path
     fi
 
-    error=`mkfs.ext4 -F $device_path 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error $error
+    # don't format the volume if snapshot is set
+    if [ -z "${snapshot}" ]; then
+        error=`mkfs.ext4 -F $device_path 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error $error
+        fi
     fi
 
     do_detach $device_path
