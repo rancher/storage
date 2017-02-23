@@ -1,0 +1,182 @@
+#!/bin/bash
+set -e
+
+ORC_SOCK_DIR="/var/run/rancher/longhorn"
+ORC_SOCK="${ORC_SOCK_DIR}/volume-manager.sock"
+DEVICE_TIMEOUT=10
+
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+
+init()
+{
+    mkdir -p "${ORC_SOCK_DIR}"
+    print_success
+}
+
+create()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+    local size=${OPTS['size']:-"10737418240"}
+    local numReplicas=${OPTS['numberOfReplicas']:-"2"}
+
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
+        -d '{"Name": "'${name}'", "Size": '${size}', "NumberOfReplicas": '${numReplicas}'}' \
+        http://orc/v1/volumes/)
+
+    local ERR=$(echo ${OUT} | jq -r '.error')
+    if [ "${ERR}" != "null" ]; then
+        print_error "${ERR}"
+    fi
+    print_options created true name ${name}
+}
+
+delete()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X DELETE http://orc/v1/volumes/${name})
+
+    local ERR=$(echo ${OUT} | jq -r '.error')
+    if [ "${ERR}" != "null" ]; then
+        print_error "${ERR}"
+    fi
+
+    print_success
+}
+
+attach()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+
+    if [ -b /dev/longhorn/${name} ]; then
+        print_device "/dev/longhorn/${name}"
+        exit 0
+    fi
+
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST http://orc/v1/volumes/${name}/attach)
+
+    local ERR=$(echo ${OUT} | jq -r '.error')
+    if [ "${ERR}" != "null" ]; then
+        print_error "${ERR}"
+    fi
+
+    local timeout=${DEVICE_TIMEOUT}
+    until [ -b /dev/longhorn/${name} ]; do
+        ((timeout--))
+        if [ ${timeout} -le 0 ]; then
+            print_error "attach timed out"
+        fi
+        sleep 1
+    done
+
+    print_device "/dev/longhorn/${name}"
+}
+
+detach()
+{
+    # ${DEVICE} will be set with the device that should be detached
+    local name=${DEVICE#'/dev/longhorn/'}
+
+    if [ "${name}" == "${DEVICE}" ]; then
+        print_error "${DEVICE} is not a longhorn device"
+    fi
+
+    if [ ! -e /dev/longhorn/${name} ]; then
+        print_success
+        exit 0
+    fi
+
+
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST http://orc/v1/volumes/${name}/detach)
+
+    local ERR=$(echo ${OUT} | jq -r '.error')
+    if [ "${ERR}" != "null" ]; then
+        print_error "${ERR}"
+    fi
+
+    local timeout=${DEVICE_TIMEOUT}
+    while [ -e /dev/longhorn/${name} ]; do
+        ((timeout--))
+        if [ ${timeout} -le 0 ]; then
+            print_error "detach timed out"
+        fi
+        sleep 1
+    done
+
+    print_success
+}
+
+mountdest()
+{
+    # ${MNT_DEST} will be set with the directory where the filesystem should be mounted
+    # ${DEVICE} will be the device returned from attach, if any
+    # ${OPTS} will be populated with the options from the JSON input
+    local name=${DEVICE#'/dev/longhorn/'}
+
+    if [ "${name}" == "${DEVICE}" ]; then
+        print_error "${DEVICE} is not a longhorn device"
+    fi
+
+    local OUT
+    if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+        if [ $(echo ${OUT} | grep 'mount: wrong fs type,' | wc -l) -gt 0 ]; then
+
+            LOCK_FILE="${ORC_SOCK_DIR}/${name}.lock"
+            while [ -f "${LOCK_FILE}" ]; do sleep 2; done
+
+            touch ${LOCK_FILE}
+            trap "rm -f ${LOCK_FILE}" EXIT
+
+            if OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+                print_success
+                exit 0
+            fi
+
+            if ! OUT=$(mkfs.ext4 -F "${DEVICE}" 2>&1); then
+                print_error "${OUT}"
+            fi
+            if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+                print_error "${OUT}"
+            fi
+        fi
+    fi
+    print_success
+}
+
+unmount()
+{
+    # ${MNT_DEST} will be set with the directory from which the filesystem should be unmounted
+    local OUT
+    if ! OUT=$(umount "${MNT_DEST}" 2>&1); then
+        if [ "$(echo ${OUT} | grep 'not mounted')" ]; then
+            print_success "not mounted"
+        elif [ "$(echo ${OUT} | grep 'mountpoint not found')" ]; then
+            print_success "not found"
+        else
+            print_error "${OUT}"
+        fi
+    fi
+    print_success "unmounted"
+}
+
+# Every script must call main as such
+main "$@"
