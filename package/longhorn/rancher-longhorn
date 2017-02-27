@@ -29,7 +29,7 @@ create()
     local numReplicas=${OPTS['numberOfReplicas']:-"2"}
 
     local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
-        -d '{"Name": "'${name}'", "Size": '${size}', "NumberOfReplicas": '${numReplicas}'}' \
+        -d '{"Name": "'${name}'", "Size": "'${size}'", "NumberOfReplicas": '${numReplicas}'}' \
         http://orc/v1/volumes/)
 
     local ERR=$(echo ${OUT} | jq -r '.error')
