@@ -285,8 +285,10 @@ unmount() {
     if [ $? -ne 0 ]; then
         if [ "$(echo $result | grep 'not mounted')" ]; then
             print_success not mounted
+            exit 0
         elif [ "$(echo $result | grep 'mountpoint not found')" ]; then
             print_success not found
+            exit 0
         else
             print_error $result
         fi
