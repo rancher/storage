@@ -323,7 +323,7 @@ delete() {
 
     current_state=$(echo ${volumes} | jq -r '.Volumes[0].State')
     if [ "${current_state}" != "available" ]; then
-        print_error "Failed to delete volume ${VOLUME_ID}, current state: ${current_state} is not available"
+        print_error "Failed to delete volume ${VOLUME_ID}, current state: ${current_state} is not available. Should retry"
     fi
 
     local error
