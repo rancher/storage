@@ -275,7 +275,9 @@ mountdest() {
     if [ $? -ne 0 ]; then
         print_error $error
     fi
-
+    if [ -z "$(ls -A "${MNT_DEST}/lost+found" 2>/dev/null)" ]; then
+        rm -rf "${MNT_DEST}/lost+found"
+    fi
     print_success
 }
 
