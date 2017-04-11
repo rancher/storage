@@ -205,8 +205,12 @@ do_attach() {
                 continue
             # unrecoverable error
             else
-                echo $error
-                exit 1
+                error=`aws ec2 detach-volume --force --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
+                if [ $? -ne 0 ]; then
+                    print_error "Failed to detach ebs volume by force. ${error}"
+                fi
+                wait_volume_transition "in-use" "available"
+                continue
             fi
         else
             wait_volume_attaching
