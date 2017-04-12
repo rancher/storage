@@ -58,7 +58,7 @@ find_available_device_path() {
         print_error "Failed to describe volume of instance-id ${INSTANCE_ID}. ${attachments}"
     fi
 
-    local prefered_device_paths="fghijklmnop"
+    local prefered_device_paths="fghijklmnopqrstuvwxyz"
     for (( i=0; i<${#prefered_device_paths}; i++ )); do
         local current="/dev/sd${prefered_device_paths:$i:1}"
         local device=`echo ${attachments} | jq "select(.Device==\"${current}\") | .Device"`
