@@ -6,6 +6,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
 )
@@ -51,6 +52,28 @@ func errorToResponse(err error) volume.Response {
 	return volume.Response{
 		Err: err.Error(),
 	}
+}
+
+func toVols(data interface{}) ([]*volume.Volume, error) {
+	volumes := []*volume.Volume{}
+
+	for _, v := range data.([]interface{}) {
+		var vol volume.Volume
+		if err := mapstructure.Decode(v, &vol); err != nil {
+			return nil, err
+		}
+		volumes = append(volumes, &vol)
+	}
+
+	return volumes, nil
+}
+
+func toVol(data interface{}) (*volume.Volume, error) {
+	var vol volume.Volume
+	if err := mapstructure.Decode(data, &vol); err != nil {
+		return nil, err
+	}
+	return &vol, nil
 }
 
 func getOptions(vol *client.Volume) map[string]string {

@@ -21,10 +21,10 @@ main()
 {
 
     case $1 in
-        init)
+        init|list)
             "$@"
             ;;
-        create|delete|attach)
+        create|delete|attach|get)
             parse "$2"
             "$@"
             ;;
@@ -70,6 +70,11 @@ print_options()
 print_device()
 {
     echo -n "$@" | jq -R -c -s '{"status": "Success", "device": .}'
+}
+
+print_data()
+{
+    echo -n "$@" | jq -c '{"status": "Success", "data": .}'
 }
 
 print_not_supported()

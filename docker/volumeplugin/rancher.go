@@ -9,7 +9,7 @@ import (
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/go-rancher/v2"
+	client "github.com/rancher/go-rancher/v2"
 )
 
 const (
@@ -34,6 +34,9 @@ type RancherState struct {
 }
 
 func NewRancherState(driver string, client *client.RancherClient) (*RancherState, error) {
+	if client == nil {
+		return nil, nil
+	}
 	host, err := getHostID(client)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting host ID")

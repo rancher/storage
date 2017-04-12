@@ -19,9 +19,20 @@ func ForceSymlinkInDockerPlugins(driver string) error {
 	if err := os.MkdirAll(rancherSockDir, 0755); err != nil {
 		return err
 	}
-	symlinkFile := filepath.Join(dockerSockDir, driver+".sock")
 
-	return exec.Command("ln", "-sf", RancherSocketFile(driver), symlinkFile).Run()
+	return exec.Command("ln", "-sf", RancherSocketFile(driver), PluginSocketSymlink(driver)).Run()
+}
+
+func ShutdownHook(driver string) func() error {
+	return func() error {
+		os.Remove(PluginSocketSymlink(driver))
+		os.Remove(RancherSocketFile(driver))
+		return nil
+	}
+}
+
+func PluginSocketSymlink(driver string) string {
+	return filepath.Join(dockerSockDir, driver+".sock")
 }
 
 func RancherSocketFile(driver string) string {

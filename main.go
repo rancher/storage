@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-	"os"
-
 	"github.com/Sirupsen/logrus"
 	dockerClient "github.com/docker/engine-api/client"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/pkg/errors"
-	"github.com/rancher/go-rancher/v2"
+	client "github.com/rancher/go-rancher/v2"
 	"github.com/rancher/kubernetes-agent/healthcheck"
 	"github.com/rancher/storage/docker/volumeplugin"
+	"github.com/rancher/storage/util/daemon"
 	"github.com/urfave/cli"
+	"os"
 )
 
 var VERSION = "v0.0.0-dev"
@@ -80,21 +80,24 @@ func start(c *cli.Context) error {
 		return err
 	}
 
+	var rancher *client.RancherClient
 	opts := &client.ClientOpts{
 		Url:       c.String("cattle-url"),
 		AccessKey: c.String("cattle-access-key"),
 		SecretKey: c.String("cattle-secret-key"),
 	}
-	client, err := client.NewRancherClient(opts)
-	if err != nil {
-		return err
+	if opts.Url != "" {
+		rancher, err = client.NewRancherClient(opts)
+		if err != nil {
+			return err
+		}
 	}
 
 	driverName := c.String("driver-name")
 	if driverName == "" {
 		return errors.New("--driver-name is required")
 	}
-	d, err := volumeplugin.NewRancherStorageDriver(driverName, client, cli)
+	d, err := volumeplugin.NewRancherStorageDriver(driverName, rancher, cli)
 	//		DriveName:       driver,
 	//		Basedir:         DefaultBasedir,
 	//		CreateSupported: true,
@@ -119,5 +122,7 @@ func start(c *cli.Context) error {
 	}
 	volumeplugin.ExtendHandler(h, d)
 	volumeplugin.ForceSymlinkInDockerPlugins(driverName)
-	return h.ServeUnix(volumeplugin.RancherSocketFile(driverName), 0)
+	go h.ServeUnix(volumeplugin.RancherSocketFile(driverName), 0)
+
+	return daemon.WaitForExit(volumeplugin.ShutdownHook(driverName))
 }

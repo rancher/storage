@@ -21,6 +21,7 @@ type CmdOutput struct {
 	Message string
 	Options map[string]string
 	Device  string `json:"device"`
+	Data    interface{}
 }
 
 func (d *RancherStorageDriver) exec(command string, args ...string) (CmdOutput, error) {

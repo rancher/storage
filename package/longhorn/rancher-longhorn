@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-ORC_SOCK_DIR="/var/run/rancher/longhorn"
+ORC_SOCK_DIR="/var/run/longhorn"
 ORC_SOCK="${ORC_SOCK_DIR}/volume-manager.sock"
 DEVICE_TIMEOUT=10
 
@@ -17,6 +17,20 @@ init()
     print_success
 }
 
+list()
+{
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X GET \
+        -H 'Accept: application/json' \
+        http://orc/v1/volumes)
+
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
+    fi
+    print_data $(echo ${OUT} | jq -c '.data | map({Name: .name, Mountpoint: ("/var/lib/rancher/volumes/rancher-longhorn/" + .name), Status: .})')
+}
+
 create()
 {
     # The OPTS variable will be populated from the input JSON as a map of key/values
@@ -29,12 +43,14 @@ create()
     local numReplicas=${OPTS['numberOfReplicas']:-"2"}
 
     local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
-        -d '{"Name": "'${name}'", "Size": "'${size}'", "NumberOfReplicas": '${numReplicas}'}' \
-        http://orc/v1/volumes/)
+        -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        -d '{"name": "'${name}'", "size": "'${size}'", "numberOfReplicas": '${numReplicas}'}' \
+        http://orc/v1/volumes)
 
-    local ERR=$(echo ${OUT} | jq -r '.error')
-    if [ "${ERR}" != "null" ]; then
-        print_error "${ERR}"
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
     fi
     print_options created true name ${name}
 }
@@ -48,14 +64,42 @@ delete()
 
     local name=${OPTS['name']}
 
-    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X DELETE http://orc/v1/volumes/${name})
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X DELETE \
+        -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        http://orc/v1/volumes/${name})
 
-    local ERR=$(echo ${OUT} | jq -r '.error')
-    if [ "${ERR}" != "null" ]; then
-        print_error "${ERR}"
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
     fi
 
     print_success
+}
+
+get()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X GET \
+        -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        http://orc/v1/volumes/${name})
+
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
+    fi
+    if [ "${tpe}" != "volume" ]; then
+        print_error "No such volume"
+    fi
+
+    print_data $(echo ${OUT} | jq -c '{Name: .name, Mountpoint: ("/var/lib/rancher/volumes/rancher-longhorn/" + .name), Status: .}')
 }
 
 attach()
@@ -72,11 +116,15 @@ attach()
         exit 0
     fi
 
-    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST http://orc/v1/volumes/${name}/attach)
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
+        -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        -d '{"hostId":""}' \
+        http://orc/v1/volumes/${name}?action=attach)
 
-    local ERR=$(echo ${OUT} | jq -r '.error')
-    if [ "${ERR}" != "null" ]; then
-        print_error "${ERR}"
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
     fi
 
     local timeout=${DEVICE_TIMEOUT}
@@ -106,11 +154,15 @@ detach()
     fi
 
 
-    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST http://orc/v1/volumes/${name}/detach)
+    local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
+        -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        -d '{}' \
+        http://orc/v1/volumes/${name}?action=detach)
 
-    local ERR=$(echo ${OUT} | jq -r '.error')
-    if [ "${ERR}" != "null" ]; then
-        print_error "${ERR}"
+    local tpe=$(echo ${OUT} | jq -r '.type')
+    if [ "${tpe}" == "error" ]; then
+        local msg=$(echo ${OUT} | jq -r '.message')
+        print_error "${msg}"
     fi
 
     local timeout=${DEVICE_TIMEOUT}
