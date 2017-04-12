@@ -17,6 +17,8 @@ import (
 var VERSION = "v0.0.0-dev"
 
 func main() {
+	logrus.SetFormatter(&logrus.TextFormatter{ForceColors: true})
+
 	app := cli.NewApp()
 	app.Name = "storage"
 	app.Version = VERSION
