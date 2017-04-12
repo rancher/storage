@@ -63,8 +63,15 @@ find_available_device_path() {
         local current="/dev/sd${prefered_device_paths:$i:1}"
         local device=`echo ${attachments} | jq "select(.Device==\"${current}\") | .Device"`
         if [ "${device}" == "" ]; then
-            echo ${current};
-            break
+            find_device_path=`lsblk -o KNAME | sed -e 's/^/\/dev\//' | grep "${current}"`
+            if [ -z "$find_device_path" ]; then
+                current_new_format="/dev/xvd${prefered_device_paths:$i:1}"
+                find_device_path=`lsblk -o KNAME | sed -e 's/^/\/dev\//' | grep "${current_new_format}"`
+                if [ -z "$find_device_path" ]; then
+                    echo ${current};
+                    break
+                fi
+            fi
         fi
     done
 }
