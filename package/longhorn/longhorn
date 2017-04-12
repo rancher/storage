@@ -28,7 +28,7 @@ list()
         local msg=$(echo ${OUT} | jq -r '.message')
         print_error "${msg}"
     fi
-    print_data $(echo ${OUT} | jq -c '.data | map({Name: .name, Mountpoint: ("/var/lib/rancher/volumes/rancher-longhorn/" + .name), Status: .})')
+    print_data $(echo ${OUT} | jq -c '.data | map({Name: .name, Mountpoint: ("/var/lib/rancher/volumes/longhorn/" + .name), Status: .})')
 }
 
 create()
@@ -99,7 +99,7 @@ get()
         print_error "No such volume"
     fi
 
-    print_data $(echo ${OUT} | jq -c '{Name: .name, Mountpoint: ("/var/lib/rancher/volumes/rancher-longhorn/" + .name), Status: .}')
+    print_data $(echo ${OUT} | jq -c '{Name: .name, Mountpoint: ("/var/lib/rancher/volumes/longhorn/" + .name), Status: .}')
 }
 
 attach()

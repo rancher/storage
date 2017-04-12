@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const jsonStr = `[{"Name":"qq","Mountpoint":"/var/lib/rancher/volumes/rancher-longhorn/qq","Status":{"name":"qq"}},{"Name":"zz","Mountpoint":"/var/lib/rancher/volumes/rancher-longhorn/zz","Status":{"name":"zz"}}]`
+const jsonStr = `[{"Name":"qq","Mountpoint":"/var/lib/rancher/volumes/longhorn/qq","Status":{"name":"qq"}},{"Name":"zz","Mountpoint":"/var/lib/rancher/volumes/longhorn/zz","Status":{"name":"zz"}}]`
 
 func TestToVols(t *testing.T) {
 	assert := require.New(t)
