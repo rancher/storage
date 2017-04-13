@@ -1,21 +1,28 @@
 #!/bin/bash
 set -e
 
-source $(dirname $0)/version
+cd $(dirname $0)/..
 
-ARCH=${ARCH:?"ARCH not set"}
+ARCH=${ARCH:-amd64}
 SUFFIX=""
 [ "${ARCH}" != "amd64" ] && SUFFIX="_${ARCH}"
 
-cd $(dirname $0)/../package
+export VERSION=${VERSION:-$(./scripts/version)}
+cd ./package
 
-TAG=${TAG:-${IMAGE_VERSION}${SUFFIX}}
+TAG=${TAG:-${VERSION}${SUFFIX}}
 REPO=${REPO:-rancher}
+
+if [[ "$1" != "" && ! -e "$1/Dockerfile" ]]; then
+    echo no such file "./package/$1/Dockerfile"
+    exit 1
+fi
 
 if [ ! -e ../bin/storage ]; then
     ../scripts/build
 fi
 
+mkdir -p ../dist
 > ../dist/images
 
 cp ../bin/storage .
@@ -24,12 +31,20 @@ SSL_SCRIPT_COMMIT=98660ada3d800f653fc1f105771b5173f9d1a019
 curl -sLf https://raw.githubusercontent.com/rancher/rancher/${SSL_SCRIPT_COMMIT}/server/bin/update-rancher-ssl > ../package/common/update-rancher-ssl
 chmod +x ../package/common/update-rancher-ssl
 
-for i in */Dockerfile; do
-    BASE=$(dirname $i)
+build_image() {
+    BASE=$(dirname $1)
     IMAGE=${REPO}/storage-${BASE}:${TAG}
-    docker build -f $i -t ${IMAGE} .
+    docker build -f $1 -t ${IMAGE} .
     if [ "$BASE" != "example" ]; then
         echo ${IMAGE} >> ../dist/images
     fi
     echo Built ${IMAGE}
-done
+}
+
+if [ "$1" != "" ]; then
+    build_image "$1/Dockerfile"
+else
+    for i in */Dockerfile; do
+        build_image ${i}
+    done
+fi
