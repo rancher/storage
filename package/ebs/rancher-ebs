@@ -275,8 +275,8 @@ mountdest() {
     if [ $? -ne 0 ]; then
         print_error $error
     fi
-
-    print_success
+    mkdir -p "${MNT_DEST}/_data"
+    print_options subDir true
 }
 
 unmount() {
