@@ -39,7 +39,7 @@ create()
     fi
 
     local name=${OPTS['name']}
-    local size=${OPTS['size']:-"10737418240"}
+    local size=${OPTS['size']:-"100G"}
     local numReplicas=${OPTS['numberOfReplicas']:-"2"}
 
     local OUT=$(curl -s --unix-socket ${ORC_SOCK} -X POST \
