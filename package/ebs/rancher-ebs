@@ -181,7 +181,7 @@ create() {
 
     do_detach $device_path
 
-    print_options created true volumeID ${VOLUME_ID}
+    print_options created true volumeID ${VOLUME_ID} ec2_region ${EC2_REGION} ec2_az ${EC2_AVAIL_ZONE}
 }
 
 is_attached_dev() {
