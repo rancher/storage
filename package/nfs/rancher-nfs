@@ -30,7 +30,7 @@ mount_default_share() {
     if [ $(ismounted "${mntDest}") == 0 ] ; then
         mkdir -p "${mntDest}"
         get_host_process_pid
-        error=`nsenter -t ${TARGET_PID} -n mount "${NFS_SERVER}":"${MOUNT_DIR}" "${mntDest}" 2>&1`
+        error=`nsenter -t ${TARGET_PID} -n mount ${mntOptions} "${NFS_SERVER}":"${MOUNT_DIR}" "${mntDest}" 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed mount ${mntOptions} ${NFS_SERVER}:${MOUNT_DIR} ${mntDest}: ${error}"
         fi
