@@ -1,0 +1,185 @@
+#!/bin/bash
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+
+source /usr/bin/common.sh
+
+mount_default_share() {
+    local mntDest=$1
+
+    # get host:export from environment variables
+    if [ -z "${CIFS_SERVER}" ]; then
+        print_error "Failure: No environment variable CIFS_SERVER found\"}"
+    fi
+
+    #MOUNT_DIR is not required for azure
+#    if [ -z "${MOUNT_DIR}" ]; then
+#        print_error "Failure: No environment variable MOUNT_DIR found\"}"
+#    fi
+
+    local mntOptions=""
+#    if [ ! -z "${MOUNT_OPTS}" ]; then
+#        mntOptions="-o ${MOUNT_OPTS}"
+#    fi
+    mntOptions="-o ${MOUNT_OPTS}"
+    # mount remote share if not mounted already
+    if [ $(ismounted "${mntDest}") == 0 ] ; then
+        mkdir -p "${mntDest}"
+        get_host_process_pid
+        error=`nsenter -t ${TARGET_PID} -n mount -t cifs "${CIFS_SERVER}" "${mntDest}" -o "${MOUNT_OPTS}" 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed mount ${mntOptions} ${CIFS_SERVER} ${mntDest}: ${error}"
+        fi
+    fi
+}
+
+unmount_default_share() {
+    local mntDest=$1
+
+    # now unmount
+    local error
+    error=`umount ${mntDest} 2>&1`
+    if [ $? -ne 0 ]; then
+        print_error "Failed umount ${mntDest}: ${error}"
+    fi
+
+    # remove empty temporary mntDest directory we created
+    if [ ! "$(ls -A ${mntDest})" ]; then
+        rm -rf "${mntDest}"
+    fi
+}
+
+init()
+{
+    print_success
+}
+
+tmp_dir() {
+    echo "/tmp/$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w5 | head -n1)"
+}
+
+create() {
+    # if user supplies host:export, we do nothing
+    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        print_success
+        exit 0
+    fi
+
+    if [ -z "${OPTS[name]}" ]; then
+        print_error "name is required"
+    fi
+
+
+    local mntDest="$(tmp_dir)"
+    mount_default_share "${mntDest}"
+
+    # create sub-directory using name parameter to represent volume
+    local subDir="${mntDest}"/"${OPTS[name]}"
+    local created=0
+    if [ ! -d "${subDir}" ]; then
+        mkdir -p "${subDir}"
+        created=1
+    fi
+
+    # now unmount
+    unmount_default_share "${mntDest}"
+
+    if [ "${created}" == 1 ]; then
+        print_options created true name ${OPTS[name]}
+    else
+        print_success
+    fi
+}
+
+delete() {
+    if [ -z "${OPTS[created]}" ]; then
+        print_success
+        exit 0
+    fi
+
+    if [ -z "${OPTS[name]}" ]; then
+        print_error "name is required"
+    fi
+
+    local mntDest="$(tmp_dir)"
+    mount_default_share "${mntDest}"
+
+    # delete sub-directory using name parameter to represent volume
+    local subDir="${mntDest}"/"${OPTS[name]}"
+    if [ -d "$subDir" ]; then
+        rm -rf "${subDir}"
+    fi
+
+    # now unmount
+    unmount_default_share "${mntDest}"
+
+    print_success
+}
+
+attach() {
+    print_not_supported
+}
+
+detach() {
+    print_not_supported
+}
+
+mountdest() {
+    local mntOptions=""
+    if [ ! -z "${OPTS[mntOptions]}" ]; then
+        mntOptions="-o ${OPTS[mntOptions]}"
+    fi
+
+    local mntSrc="${OPTS[host]}":"${OPTS[export]}"
+
+    # if user does not supply host:export, we will mount remote share host:export/name to mntDst
+    if [ -z "${OPTS[host]}" ] || [ -z "${OPTS[export]}" ]; then
+        # get host:export from environment variables
+        if [ -z "${CIFS_SERVER}" ]; then
+            print_error "Failed: No environment variable CIFS_SERVER found"
+        fi
+
+        if [ -z "${MOUNT_DIR}" ]; then
+            print_error "Failed: No environment variable MOUNT_DIR found"
+        fi
+
+        if [ -z "${OPTS[name]}" ]; then
+            print_error "Failed: name is required"
+        fi
+
+        if [ ! -z "${MOUNT_OPTS}" ]; then
+            mntOptions="-o ${MOUNT_OPTS}"
+        fi
+
+        mntSrc="${CIFS_SERVER}"/"${OPTS[name]}"
+    fi
+
+    # mount remote share if not mounted already
+    if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
+        mkdir -p "${MNT_DEST}"
+        get_host_process_pid
+        local error
+        error=`nsenter -t ${TARGET_PID} -n mount -t cifs ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed mount ${mntOptions} ${mntSrc} ${MNT_DEST}: ${error}"
+        fi
+    fi
+
+    print_success
+}
+
+unmount() {
+    if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
+        error=`umount "${MNT_DEST}" 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed umount ${MNT_DEST}: ${error}"
+        fi
+    fi
+
+    print_success
+}
+
+
+# Every script must call main as such
+main "$@"
