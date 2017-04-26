@@ -282,7 +282,22 @@ attach() {
     fi
 
     if [ "$linux_device_path" != "" ]; then
-        print_device ${linux_device_path}
+        mountpoint="/var/lib/rancher/volumes/rancher-ebs/${OPTS[name]}-staging"
+        mkdir -p ${mountpoint}
+        error=`mount ${linux_device_path} ${mountpoint} 2>&1`
+        if [ $? -ne 0 ]; then
+            if [ -z "$(echo $error | grep 'is already mounted')" ]; then
+                print_error $error
+            fi
+        fi
+        cd ${mountpoint}
+        if [ -z "$(ls -A | grep -v lost+found | grep -v _rancher-data )" ]; then
+            mountdest="${mountpoint}/_rancher-data"
+            mkdir -p ${mountdest}
+            print_device ${mountdest}
+        else
+            print_device $linux_device_path
+        fi
     else
         print_error All device paths are in use for instance-id: ${INSTANCE_ID}
     fi
@@ -305,10 +320,16 @@ detach() {
 
 mountdest() {
     local error
-
-    error=`mount $DEVICE $MNT_DEST 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error $error
+    if [ -d "$DEVICE" ]; then
+        error=`mount --bind $DEVICE $MNT_DEST 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error $error
+        fi
+    else
+        error=`mount $DEVICE $MNT_DEST 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error $error
+        fi
     fi
 
     print_success
