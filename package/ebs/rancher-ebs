@@ -350,7 +350,7 @@ delete() {
     local volumes
     volumes=`aws ec2 describe-volumes --region ${EC2_REGION} --volume-ids ${VOLUME_ID} 2>&1`
     if [ $? -ne 0 ]; then
-        if [ "$(echo $error | grep 'InvalidVolume.NotFound')" ]; then
+        if [ "$(echo $volumes | grep 'InvalidVolume.NotFound')" ]; then
             print_success Volume not found
             exit 0
         else
