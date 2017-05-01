@@ -69,9 +69,9 @@ create() {
     fi
 
     # default configuration
-    local host="$DEFAULT_HOST"
-    local exportDir="$DEFAULT_EXPORT"
-    local opts="$DEFAULT_MOUNT_OPTS"
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
 
@@ -105,9 +105,9 @@ attach() {
 
 mountdest() {
     # default configuration
-    local host="$DEFAULT_HOST"
-    local exportDir="$DEFAULT_EXPORT"
-    local opts="$DEFAULT_MOUNT_OPTS"
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$MNT_DEST"
 
@@ -138,9 +138,9 @@ unmount() {
 
 delete() {
     # default configuration
-    local host="$DEFAULT_HOST"
-    local exportDir="$DEFAULT_EXPORT"
-    local opts="$DEFAULT_MOUNT_OPTS"
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
 
