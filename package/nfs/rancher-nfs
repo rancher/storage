@@ -30,11 +30,6 @@ mount_nfs() {
     fi
 }
 
-mount_default() {
-    local mountDir=$1
-    mount_nfs "$DEFAULT_HOST" "$DEFAULT_EXPORT" "$mountDir" "$DEFAULT_MOUNT_OPTS"
-}
-
 unmount_nfs() {
     local mountDir="$1"
 
