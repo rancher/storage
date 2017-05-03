@@ -1,60 +1,51 @@
 #!/bin/bash
 
-# Notes:
-#  - Please install "jq" package before using this driver.
-
 if [ -e "$(dirname $0)/common.sh" ]; then
     source $(dirname $0)/common.sh
 elif [ -e "$(dirname $0)/../common/common.sh" ]; then
     source $(dirname $0)/../common/common.sh
 fi
 
-mount_default_share() {
-    local mntDest=$1
+mount_nfs() {
+    local host=$1
+    local exportDir=$2
+    local mountDir=$3
+    local opts=$4
+    local error
 
-    # get host:export from environment variables
-    if [ -z "${NFS_SERVER}" ]; then
-        print_error "Failure: No environment variable NFS_SERVER found\"}"
-    fi
+    if [ "$(ismounted $mountDir)" == 0 ]; then
+        mkdir -p $mountDir
 
-    if [ -z "${MOUNT_DIR}" ]; then
-        print_error "Failure: No environment variable MOUNT_DIR found\"}"
-    fi
-
-    local mntOptions=""
-    if [ ! -z "${MOUNT_OPTS}" ]; then
-        mntOptions="-o ${MOUNT_OPTS}"
-    fi
-
-    # mount remote share if not mounted already
-    if [ $(ismounted "${mntDest}") == 0 ] ; then
-        mkdir -p "${mntDest}"
         get_host_process_pid
-        error=`nsenter -t ${TARGET_PID} -n mount ${mntOptions} "${NFS_SERVER}":"${MOUNT_DIR}" "${mntDest}" 2>&1`
+        local cmd="nsenter -t ${TARGET_PID} -n mount"
+        if [ ! -z "$opts" ]; then
+            cmd="$cmd -o $opts"
+        fi
+        cmd="$cmd $host:$exportDir $mountDir"
+
+        error=`$cmd 2>&1`
         if [ $? -ne 0 ]; then
-            print_error "Failed mount ${mntOptions} ${NFS_SERVER}:${MOUNT_DIR} ${mntDest}: ${error}"
+            print_error "Failed $cmd"
         fi
     fi
 }
 
-unmount_default_share() {
-    local mntDest=$1
+unmount_nfs() {
+    local mountDir="$1"
 
-    # now unmount
-    local error
-    error=`umount ${mntDest} 2>&1`
-    if [ $? -ne 0 ]; then
-        print_error "Failed umount ${mntDest}: ${error}"
+    if [ $(ismounted "$mountDir") == 1 ] ; then
+        error=`umount "$mountDir" 2>&1`
+        if [ $? -ne 0 ]; then
+            print_error "Failed umount $mountDir: $error"
+        fi
     fi
 
-    # remove empty temporary mntDest directory we created
-    if [ ! "$(ls -A ${mntDest})" ]; then
-        rm -rf "${mntDest}"
+    if [ ! "$(ls -A $mountDir)" ]; then
+        rm -rf "$mountDir"
     fi
 }
 
-init()
-{
+init() {
     print_success
 }
 
@@ -62,9 +53,13 @@ tmp_dir() {
     echo "/tmp/$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w5 | head -n1)"
 }
 
+################################################################################
+# These functions are called by the volume plugin framework (or Rancher)
+################################################################################
+
 create() {
-    # if user supplies host:export, we do nothing
-    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+    # if user supplies pool=false, do nothing
+    if [ "${OPTS[pool]}" == "false" ]; then
         print_success
         exit 0
     fi
@@ -73,116 +68,100 @@ create() {
         print_error "name is required"
     fi
 
+    # default configuration
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
+    local name="${OPTS[name]}"
+    local mountDir="$(tmp_dir)"
 
-    local mntDest="$(tmp_dir)"
-    mount_default_share "${mntDest}"
+    # if host/export are set, switch to driver_opts
+    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        host="${OPTS[host]}"
+        exportDir="${OPTS[export]}"
+        opts="${OPTS[mntOptions]}"
+    fi
 
     # create sub-directory using name parameter to represent volume
-    local subDir="${mntDest}"/"${OPTS[name]}"
+    mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
+    local subDir="$mountDir/$name"
     local created=0
     if [ ! -d "${subDir}" ]; then
         mkdir -p "${subDir}"
         created=1
     fi
-
-    # now unmount
-    unmount_default_share "${mntDest}"
+    unmount_nfs "${mountDir}"
 
     if [ "${created}" == 1 ]; then
-        print_options created true name ${OPTS[name]}
+        print_options pool true name ${OPTS[name]}
     else
         print_success
     fi
-}
-
-delete() {
-    if [ -z "${OPTS[created]}" ]; then
-        print_success
-        exit 0
-    fi
-
-    if [ -z "${OPTS[name]}" ]; then
-        print_error "name is required"
-    fi
-
-    local mntDest="$(tmp_dir)"
-    mount_default_share "${mntDest}"
-
-    # delete sub-directory using name parameter to represent volume
-    local subDir="${mntDest}"/"${OPTS[name]}"
-    if [ -d "$subDir" ]; then
-        rm -rf "${subDir}"
-    fi
-
-    # now unmount
-    unmount_default_share "${mntDest}"
-
-    print_success
 }
 
 attach() {
     print_not_supported
 }
 
+mountdest() {
+    # default configuration
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
+    local name="${OPTS[name]}"
+    local mountDir="$MNT_DEST"
+
+    # if host/export are set, switch to driver_opts
+    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        host="${OPTS[host]}"
+        exportDir="${OPTS[export]}"
+        opts="${OPTS[mntOptions]}"
+    fi
+
+    # if pooling is enabled, alter export to point to subdirectory
+    if [ "${OPTS[pool]}" != "false" ]; then
+        exportDir="$exportDir/$name"
+    fi
+
+    mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
+    print_success
+}
+
 detach() {
     print_not_supported
 }
 
-mountdest() {
-    local mntOptions=""
-    if [ ! -z "${OPTS[mntOptions]}" ]; then
-        mntOptions="-o ${OPTS[mntOptions]}"
-    fi
-
-    local mntSrc="${OPTS[host]}":"${OPTS[export]}"
-
-    # if user does not supply host:export, we will mount remote share host:export/name to mntDst
-    if [ -z "${OPTS[host]}" ] || [ -z "${OPTS[export]}" ]; then
-        # get host:export from environment variables
-        if [ -z "${NFS_SERVER}" ]; then
-            print_error "Failed: No environment variable NFS_SERVER found"
-        fi
-
-        if [ -z "${MOUNT_DIR}" ]; then
-            print_error "Failed: No environment variable MOUNT_DIR found"
-        fi
-
-        if [ -z "${OPTS[name]}" ]; then
-            print_error "Failed: name is required"
-        fi
-
-        if [ ! -z "${MOUNT_OPTS}" ]; then
-            mntOptions="-o ${MOUNT_OPTS}"
-        fi
-
-        mntSrc="${NFS_SERVER}":"${MOUNT_DIR}"/"${OPTS[name]}"
-    fi
-
-    # mount remote share if not mounted already
-    if [ $(ismounted "${MNT_DEST}") == 0 ] ; then
-        mkdir -p "${MNT_DEST}"
-        get_host_process_pid
-        local error
-        error=`nsenter -t ${TARGET_PID} -n mount ${mntOptions} ${mntSrc} ${MNT_DEST} 2>&1`
-        if [ $? -ne 0 ]; then
-            print_error "Failed mount ${mntOptions} ${mntSrc} ${MNT_DEST}: ${error}"
-        fi
-    fi
-
-    print_success
-}
-
 unmount() {
-    if [ $(ismounted "${MNT_DEST}") == 1 ] ; then
-        error=`umount "${MNT_DEST}" 2>&1`
-        if [ $? -ne 0 ]; then
-            print_error "Failed umount ${MNT_DEST}: ${error}"
-        fi
-    fi
-
+    unmount_nfs "$MNT_DEST"
     print_success
 }
 
+delete() {
+    # default configuration
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
+    local name="${OPTS[name]}"
+    local mountDir="$(tmp_dir)"
+
+    # if host/export are set, switch to driver_opts
+    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        host="${OPTS[host]}"
+        exportDir="${OPTS[export]}"
+        opts="${OPTS[mntOptions]}"
+    fi
+
+    # if pooling is enabled, delete the subdirectory, otherwise delete all data
+    mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
+    if [ ! -z "${OPTS[pool]}" ]; then
+        rm -rf "$mountDir/$name"
+    else
+        rm -rf "$mountDir/*"
+    fi
+    unmount_nfs "${mountDir}"
+
+    print_success
+}
 
 # Every script must call main as such
 main "$@"
