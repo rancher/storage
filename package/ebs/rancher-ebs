@@ -102,7 +102,7 @@ init()
 
 create() {
     if [ ! -z "${OPTS[volumeID]}" ]; then
-        print_success
+        print_options created true external true
         exit 0
     fi
 
@@ -353,6 +353,11 @@ unmount() {
 }
 
 delete() {
+    if [ ! -z "${OPTS[external]}" ]; then
+        print_success
+        exit 0
+    fi
+
     if [ -z "${OPTS[created]}" ]; then
         print_success
         exit 0
