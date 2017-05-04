@@ -331,8 +331,8 @@ mountdest() {
             print_error $error
         fi
     fi
-
-    print_success
+    mkdir -p "${MNT_DEST}/_data"
+    print_options subDir true
 }
 
 unmount() {

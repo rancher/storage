@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
 	"golang.org/x/net/context"
+	"path"
 )
 
 var errNoSuchVolume = errors.New("No such volume")
@@ -32,6 +33,7 @@ const (
 	DefaultBasedir = "/var/lib/rancher/volumes"
 	DefaultFsType  = "ext4"
 	DefaultScope   = "global"
+	dataSubDir     = "_data"
 )
 
 func NewRancherStorageDriver(driver string, client *client.RancherClient, cli *dockerClient.Client) (*RancherStorageDriver, error) {
@@ -249,10 +251,14 @@ func (d *RancherStorageDriver) Mount(request volume.MountRequest) volume.Respons
 	}
 
 	os.MkdirAll(mntDest, 0750)
-	if _, err := d.exec("mount", mntDest, device, opts); err != nil {
+	cmdOutput, err := d.exec("mount", mntDest, device, opts)
+	if err != nil {
 		logrus.Errorf("Failed to mount %s: %v", request.Name, err)
 		response.Err = err.Error()
 		return response
+	}
+	if val, ok := cmdOutput.Options["subDir"]; ok && val == "true" {
+		mntDest = path.Join(mntDest, dataSubDir)
 	}
 
 	response.Mountpoint = mntDest
@@ -334,6 +340,9 @@ func (d *RancherStorageDriver) Capabilities(volume.Request) volume.Response {
 }
 
 func (d *RancherStorageDriver) getMntDest(name string) string {
+	if d.DriverName == "rancher-ebs" {
+		return filepath.Join(d.getMntRoot(), name, dataSubDir)
+	}
 	return filepath.Join(d.getMntRoot(), name)
 }
 
