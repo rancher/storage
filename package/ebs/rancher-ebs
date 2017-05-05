@@ -238,6 +238,10 @@ do_attach() {
             else
                 error=`aws ec2 detach-volume --force --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
                 if [ $? -ne 0 ]; then
+                    # if the volume is already available at this, just continue
+                    if [ "$(echo $error | grep 'is in the 'available' state')" ]; then
+                        continue
+                    fi
                     print_error "Failed to detach ebs volume by force. ${error}"
                 fi
                 wait_volume_transition "in-use" "available"
