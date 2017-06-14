@@ -58,12 +58,6 @@ tmp_dir() {
 ################################################################################
 
 create() {
-    # if user supplies pool=false, do nothing
-    if [ "${OPTS[pool]}" == "false" ]; then
-        print_success
-        exit 0
-    fi
-
     if [ -z "${OPTS[name]}" ]; then
         print_error "name is required"
     fi
@@ -75,10 +69,14 @@ create() {
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
 
-    # if host/export are set, switch to driver_opts
+    # if host/export are set, do nothing
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        print_success
+        exit 0
+    # if host/exportBase are set, switch to driver_opts
+    elif [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[exportBase]}" ]; then
         host="${OPTS[host]}"
-        exportDir="${OPTS[export]}"
+        exportDir="${OPTS[exportBase]}"
         opts="${OPTS[mntOptions]}"
     fi
 
@@ -93,7 +91,7 @@ create() {
     unmount_nfs "${mountDir}"
 
     if [ "${created}" == 1 ]; then
-        print_options pool true name ${OPTS[name]}
+        print_options created true name ${OPTS[name]}
     else
         print_success
     fi
@@ -106,21 +104,21 @@ attach() {
 mountdest() {
     # default configuration
     local host="$NFS_SERVER"
-    local exportDir="$MOUNT_DIR"
+    local exportDir="$MOUNT_DIR/${OPTS[name]}"
     local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$MNT_DEST"
 
-    # if host/export are set, switch to driver_opts
+    # if host/export are set, mount root export
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
         host="${OPTS[host]}"
         exportDir="${OPTS[export]}"
         opts="${OPTS[mntOptions]}"
-    fi
-
-    # if pooling is enabled, alter export to point to subdirectory
-    if [ "${OPTS[pool]}" != "false" ]; then
-        exportDir="$exportDir/$name"
+    # if host/exportBase are set, mount subfolder
+    elif [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[exportBase]}" ]; then
+        host="${OPTS[host]}"
+        exportDir="${OPTS[exportBase]}/$name"
+        opts="${OPTS[mntOptions]}"
     fi
 
     mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
@@ -144,19 +142,24 @@ delete() {
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
 
-    # if host/export are set, switch to driver_opts
+    # if host/export or host/exportBase are set, switch to driver_opts
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
         host="${OPTS[host]}"
         exportDir="${OPTS[export]}"
         opts="${OPTS[mntOptions]}"
+    elif [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[exportBase]}" ]; then
+        host="${OPTS[host]}"
+        exportDir="${OPTS[exportBase]}"
+        opts="${OPTS[mntOptions]}"
     fi
-
-    # if pooling is enabled, delete the subdirectory, otherwise delete all data
+    
     mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
-    if [ ! -z "${OPTS[pool]}" ]; then
-        rm -rf "$mountDir/$name"
-    else
+    # if host/export is set, delete at the root
+    if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
         rm -rf "$mountDir/*"
+    # otherwise, delete subfolder
+    else
+        rm -rf "$mountDir/$name"
     fi
     unmount_nfs "${mountDir}"
 
