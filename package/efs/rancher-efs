@@ -81,6 +81,7 @@ init() {
         us-east-2 ) ;;
         us-west-2 ) ;;
         eu-west-1 ) ;;
+        ap-southeast-2 ) ;;
         * ) print_error EFS unavailable in region $EC2_REGION;;
     esac
 
