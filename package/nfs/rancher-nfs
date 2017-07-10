@@ -68,6 +68,7 @@ create() {
     local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
+    local onRemove="$ON_REMOVE"
 
     # if host/export are set, do nothing
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
@@ -78,6 +79,10 @@ create() {
         host="${OPTS[host]}"
         exportDir="${OPTS[exportBase]}"
         opts="${OPTS[mntOptions]}"
+    fi
+
+    if [ ! -z "${OPTS[onRemove]}" ]; then
+        onRemove="${OPTS[onRemove]}"
     fi
 
     # create sub-directory using name parameter to represent volume
@@ -91,7 +96,7 @@ create() {
     unmount_nfs "${mountDir}"
 
     if [ "${created}" == 1 ]; then
-        print_options created true name ${OPTS[name]}
+        print_options created true name ${OPTS[name]} onRemove $onRemove
     else
         print_success
     fi
@@ -141,6 +146,16 @@ delete() {
     local opts="$MOUNT_OPTS"
     local name="${OPTS[name]}"
     local mountDir="$(tmp_dir)"
+    local onRemove="$ON_REMOVE"
+
+    if [ ! -z "${OPTS[onRemove]}" ]; then
+        onRemove="${OPTS[onRemove]}"
+    fi
+
+    if [ "$onRemove" == "retain" ]; then
+        print_success retained
+        exit 0
+    fi
 
     # if host/export or host/exportBase are set, switch to driver_opts
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
@@ -152,18 +167,18 @@ delete() {
         exportDir="${OPTS[exportBase]}"
         opts="${OPTS[mntOptions]}"
     fi
-    
+
     mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
-        log_info "Deleting root $mountDir"
+        log_info "Purging root $mountDir"
         rm -rf "$mountDir/*"
     else
-        log_info "Deleting subfolder $mountDir/$name"
+        log_info "Purging subfolder $mountDir/$name"
         rm -rf "$mountDir/$name"
     fi
     unmount_nfs "${mountDir}"
 
-    print_success deleted
+    print_success purged
 }
 
 # Every script must call main as such
