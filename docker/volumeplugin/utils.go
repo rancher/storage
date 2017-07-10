@@ -21,10 +21,17 @@ func logRequest(action string, request *volume.Request) {
 	logrus.WithFields(fields).Infof("%s.request", action)
 }
 
-func logResponse(action string, response *volume.Response) {
+func logResponse(action, name string, response *volume.Response, output *CmdOutput) {
 	fields := logrus.Fields{}
+	fields["name"] = name
 	if response.Mountpoint != "" {
 		fields["mountpoint"] = response.Mountpoint
+	}
+	if output.Message != "" {
+		fields["message"] = output.Message
+	}
+	if output.Status != "" {
+		fields["status"] = output.Status
 	}
 	if response.Err != "" {
 		fields["error"] = response.Err

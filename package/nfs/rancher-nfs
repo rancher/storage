@@ -163,7 +163,7 @@ delete() {
     fi
     unmount_nfs "${mountDir}"
 
-    print_success
+    print_success deleted
 }
 
 # Every script must call main as such
