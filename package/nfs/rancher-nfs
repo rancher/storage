@@ -16,8 +16,7 @@ mount_nfs() {
     if [ "$(ismounted $mountDir)" == 0 ]; then
         mkdir -p $mountDir
 
-        get_host_process_pid
-        local cmd="nsenter -t ${TARGET_PID} -n mount"
+        local cmd="mount"
         if [ ! -z "$opts" ]; then
             cmd="$cmd -o $opts"
         fi
@@ -46,6 +45,7 @@ unmount_nfs() {
 }
 
 init() {
+    rpcbind -f &>/dev/null &
     print_success
 }
 
