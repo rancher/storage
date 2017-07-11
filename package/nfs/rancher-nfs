@@ -154,11 +154,11 @@ delete() {
     fi
     
     mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
-    # if host/export is set, delete at the root
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
+        log_info "Deleting root $mountDir"
         rm -rf "$mountDir/*"
-    # otherwise, delete subfolder
     else
+        log_info "Deleting subfolder $mountDir/$name"
         rm -rf "$mountDir/$name"
     fi
     unmount_nfs "${mountDir}"
