@@ -88,6 +88,28 @@ print_error()
     exit 1
 }
 
+log_message()
+{
+    local level=${1:-info}
+    shift 1
+    echo "time=\"$(TZ=utc date +%Y-%m-%dT%H:%M:%SZ)\" level=$level msg=\"$@\"" 1>&2
+}
+
+log_info()
+{
+    log_message info $@
+}
+
+log_warn()
+{
+    log_message warn $@
+}
+
+log_error()
+{
+    log_message error $@
+}
+
 ismounted() {
     local mountPoint=$1
     local mountP=`findmnt -n ${mountPoint} 2>/dev/null | cut -d' ' -f1`
