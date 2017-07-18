@@ -153,6 +153,7 @@ delete() {
     fi
 
     if [ "$onRemove" == "retain" ]; then
+        log_info $name "Retaining volume"
         print_success retained
         exit 0
     fi
@@ -170,10 +171,10 @@ delete() {
 
     mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
     if [ ! -z "${OPTS[host]}" ] && [ ! -z "${OPTS[export]}" ]; then
-        log_info "Purging root $mountDir"
+        log_info $name "Purging volume (root)"
         rm -rf "$mountDir/*"
     else
-        log_info "Purging subfolder $mountDir/$name"
+        log_info $name "Purging volume (subfolder)"
         rm -rf "$mountDir/$name"
     fi
     unmount_nfs "${mountDir}"
