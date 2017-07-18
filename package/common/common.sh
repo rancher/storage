@@ -91,8 +91,9 @@ print_error()
 log_message()
 {
     local level=${1:-info}
-    shift 1
-    echo "time=\"$(TZ=utc date +%Y-%m-%dT%H:%M:%SZ)\" level=$level msg=\"$@\"" 1>&2
+    local name=${2:-unknown}
+    shift 2
+    echo "time=\"$(TZ=utc date +%Y-%m-%dT%H:%M:%SZ)\" level=$level msg=\"$@\" name=$name" 1>&2
 }
 
 log_info()
