@@ -1,0 +1,224 @@
+#!/bin/bash
+
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+DEVICE_TIMEOUT=10
+RBD_LOCK="has_mapped"
+
+init()
+{
+    print_success
+}
+
+create()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}"  ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+    local size=${OPTS['size']:-"1G"}
+    local pool=${OPTS['pool']:-"rbd"}
+    local image_feature=${OPTS['image_feature']:-"layering"}
+    local OUT
+
+    OUT=$(rbd create ${pool}/${name} --size ${size} --image-feature ${image_feature})
+    if [ $? -ne 0  ]; then
+        print_error "${OUT}"
+    fi
+
+    print_options created true name ${name}
+}
+
+delete()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+    local pool=${OPTS['pool']:-"rbd"}
+    local locker_id
+    local OUT
+
+    OUT=$(rbd info ${pool}/${name} 2>&1)
+    if [ $? -ne 0 ]; then
+        log_info ${pool}/${name} "Device does not exist: ${OUT}"
+        print_success
+        exit 0
+    fi
+
+    locker_id=$(rbd lock list ${pool}/${name} --format json | jq -c .${RBD_LOCK} | jq -r .locker)
+    if [ "${locker_id}" != "null" ]; then
+        OUT=$(rbd lock remove ${pool}/${name} ${RBD_LOCK} ${locker_id} 2>&1)
+        log_info ${pool}/${name} "Remove lock in delete func: ${OUT}"
+    fi
+
+    device=$(rbd showmapped --format json | jq -c --arg n ${name} --arg p ${pool} '.[] | select(.name==$n and .pool==$p)' | jq -r .device)
+    if [ ! -z "${device}" ]; then
+        OUT=$(rbd unmap ${device} 2>&1)
+        log_info ${pool}/${name}-${device} "Unmap device in delete func: ${OUT}"
+    fi
+
+    OUT=$(rbd rm --no-progress ${pool}/${name} 2>&1)
+    if [ $? -ne 0  ]; then
+        print_error "${OUT}"
+    fi
+
+    print_success
+}
+
+attach()
+{
+    # The OPTS variable will be populated from the input JSON as a map of key/values
+    if [ -z "${OPTS['name']}" ]; then
+        print_error "name is required"
+    fi
+
+    local name=${OPTS['name']}
+    local pool=${OPTS['pool']:-"rbd"}
+    local LOCK_OUT
+    local OUT
+    local device
+    local timeout
+
+    locker_id=$(rbd lock list ${pool}/${name} --format json | jq -c .${RBD_LOCK} | jq -r .locker)
+    if [ "${locker_id}" == "null" ]; then
+        rbd lock add ${pool}/${name} ${RBD_LOCK}
+    fi
+
+    device=$(rbd showmapped --format json | jq -c --arg n ${name} --arg p ${pool} '.[] | select(.name==$n and .pool==$p)' | jq -r .device)
+    if [ ! -z "${device}" ]; then
+        print_device ${device}
+        exit 0
+    fi
+
+    OUT=$(rbd map ${pool}/${name})
+    if [ $? -ne 0  ]; then
+        print_error "${OUT}"
+    fi
+
+    device=${OUT}
+    timeout=${DEVICE_TIMEOUT}
+    until [ -b ${device} ]; do
+        ((timeout--))
+        if [ ${timeout} -le 0 ]; then
+            print_error "attach timed out"
+        fi
+        sleep 1
+    done
+
+    print_device ${device}
+}
+
+detach()
+{
+    # ${DEVICE} will be set with the device that should be detached
+    local name=${DEVICE#'/dev/'}
+    local rbd_name
+    local rbd_pool
+    local OUT
+    local locker_id
+
+    if [ "${name}" == "${DEVICE}" ]; then
+        print_error "${DEVICE} is not a RBD device"
+    fi
+
+    if [ ! -e /dev/${name} ]; then
+        print_success
+        exit 0
+    fi
+
+    rbd_name=$(rbd showmapped --format json | jq -c --arg d ${DEVICE} '.[] | select(.device==$d)' | jq -r .name)
+    rbd_pool=$(rbd showmapped --format json | jq -c --arg d ${DEVICE} '.[] | select(.device==$d)' | jq -r .pool)
+
+    OUT=$(rbd unmap /dev/${name} 2>&1)
+    if [ $? -ne 0 ]; then
+        print_error "${OUT}"
+    fi
+
+    locker_id=$(rbd lock list ${rbd_pool}/${rbd_name} --format json | jq -c .${RBD_LOCK} | jq -r .locker)
+    if [ "${locker_id}" != "null" ]; then
+        rbd lock remove ${rbd_pool}/${rbd_name} ${RBD_LOCK} ${locker_id}
+    fi
+
+    local timeout=${DEVICE_TIMEOUT}
+    while [ -e /dev/${name} ]; do
+        ((timeout--))
+        if [ ${timeout} -le 0 ]; then
+            print_error "detach timed out"
+        fi
+        sleep 1
+    done
+
+    print_success
+}
+
+mountdest()
+{
+    # ${mnt_dest} will be set with the directory where the filesystem should be mounted
+    # ${device} will be the device returned from attach, if any
+    # ${opts} will be populated with the options from the json input
+    local name=${DEVICE#'/dev/'}
+    local OUT
+
+    if [ "${name}" == "${DEVICE}" ]; then
+        print_error "${DEVICE} is not a RBD device"
+    fi
+
+    if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+        if [ $(echo ${OUT} | grep 'mount: wrong fs type,' | wc -l) -gt 0 ]; then
+
+            LOCK_FILE="/var/run/lock/${name}.lock"
+            while [ -f "${LOCK_FILE}" ]; do sleep 2; done
+
+            touch ${LOCK_FILE}
+            trap "rm -f ${LOCK_FILE}" EXIT
+
+            if OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+                print_success
+                exit 0
+            fi
+
+            if ! OUT=$(mkfs.ext4 -F "${DEVICE}" 2>&1); then
+                print_error "${OUT}"
+            fi
+            if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
+                print_error "${OUT}"
+            fi
+        fi
+    fi
+    print_success
+}
+
+unmount()
+{
+    # ${MNT_DEST} will be set with the directory from which the filesystem should be unmounted
+    local OUT
+    OUT=$(cat /proc/mounts | grep ${MNT_DEST})
+    if [ $? -ne 0 ]; then
+        print_success "unmounted"
+        exit 0
+    fi
+
+    OUT=$(umount ${MNT_DEST} 2>&1)
+    if [ $? -ne 0 ]; then
+        if [ "$(echo ${OUT} | grep 'not mounted')" ]; then
+            print_success "not mounted"
+        elif [ "$(echo ${OUT} | grep 'mountpoint not found')" ]; then
+            print_success "not found"
+        else
+            print_error "${OUT}"
+        fi
+    fi
+
+    print_success "unmounted"
+}
+
+# Every script must call main as such
+main "$@"
