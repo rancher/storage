@@ -1,0 +1,450 @@
+#!/bin/bash
+if [ -e "$(dirname $0)/common.sh" ]; then
+    source $(dirname $0)/common.sh
+elif [ -e "$(dirname $0)/../common/common.sh" ]; then
+    source $(dirname $0)/../common/common.sh
+fi
+
+
+readonly LOOP_CHECK_TIMES=30
+readonly WAIT_SLEEP_TIME_IN_SECONDS=1
+TRANSCATION_SEQ=""
+INSTANCE_ID=""
+DISK_ID=""
+
+
+log() {
+    if [ "${RANCHER_DEBUG}"x = "true"x ]; then
+        echo -e $1 >> $2 
+    fi
+}
+
+
+gen_client_token() {
+    local time_stampe=$(date +%s%N)
+    local random_char=$(cat /dev/urandom | tr -dc 'a-zA-Z' | fold -w5 | head -n1)
+    echo "${random_char}_${time_stampe}"
+}
+
+gen_disk_name() {
+    local random_char=$(cat /dev/urandom | tr -dc 'a-zA-Z' | fold -w8 | head -n1)
+    echo "rancher_abs_${random_char}"
+}
+
+
+# - # https://m.aliyun.com/yunqi/articles/72041?t=t1
+get_instance_id() {
+    TRANSCATION_SEQ=$(date "+%Y%m%d%H%M%S")
+    INSTANCE_ID=$(curl http://100.100.100.200/latest/meta-data/instance-id 2>/dev/null)
+}
+
+
+# - # https://help.aliyun.com/document_detail/25514.html?spm=5176.doc25516.6.868.8l8Kr9
+get_attached_device_path() {
+    local aliyun_options="--DiskIds '[\"${DISK_ID}\"]'"
+    local aliyun_call_result=$(aliyuncli ecs DescribeDisks "${aliyun_options}" --output json --filter Disks.Disk[0].Description 2>&1)
+    if [ $? -ne 0 ]; then
+        print_error "Failed in DescribeDisks ${DISK_ID}, response ${aliyun_call_result}"
+    fi
+
+    if [ -n "${aliyun_call_result}" ]; then
+        aliyun_call_result=$(echo "${aliyun_call_result}" | sed "s/\"//g")
+    fi
+
+    if [ "$(echo ${aliyun_call_result} | grep 'rancher_abs')" ]; then
+        aliyun_call_result=${aliyun_call_result#'/rancher_abs/'}
+    else
+        aliyun_call_result=""
+    fi
+
+    echo "${aliyun_call_result}"
+}
+
+
+# Find avaiable device path in os, such as '/dev/vdb', '/dev/vdc',..., '/dev/vdz'
+find_available_device_path() {
+    local last_attach_device=$(lsblk -o KNAME | sed -e 's/^/\/dev\//' | awk 'END {print}')
+    local mounted_attach_device=$(df -h | grep -w ${last_attach_device} | awk '{print $6}')
+    
+    if [ -n "${mounted_attach_device}" ]; then 
+        echo "${last_attach_device} is using on ${mounted_attach_device}"
+        return 1
+    else 
+        echo "${last_attach_device}"
+    fi
+}
+
+
+# Judge device path has been attached and get the attached disk id
+is_device_path_attaching() {
+    local device_path=$1
+
+    local aliyun_options="--InstanceId ${INSTANCE_ID} --Status In_use"
+    local aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
+    if [ $? -ne 0 ]; then
+        print_error "Failed in DescribeDisks instance ${INSTANCE_ID}, response ${aliyun_call_result}"
+    fi
+
+    DISK_ID=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.Description==\"rancher_abs${device_path}\") | .DiskId" | sed 's/"//g')
+    if [ -z "${DISK_ID}" ]; then
+        return 1
+    fi
+}
+
+
+# Loop to check status has change from $1 to $2
+# - # https://help.aliyun.com/document_detail/25690.html?spm=5176.doc25693.6.1018.kjjz6u
+listening_aliyun_disk() {
+    local start_status=$1
+    local end_status=$2
+    local cur_status=${start_status}
+    local loop_check_times=0 
+
+    local aliyun_options="--DiskIds '[\"${DISK_ID}\"]'"
+    local aliyun_call_result
+    until [ "${cur_status}"x = "${end_status}"x ]; do
+        if [ ${loop_check_times} -ge ${LOOP_CHECK_TIMES} ]; then
+            print_error "Failed in DescribeDisks disk ${DISK_ID}, timeout"
+        fi
+        sleep ${WAIT_SLEEP_TIME_IN_SECONDS}s
+
+        aliyun_call_result=$(aliyuncli ecs DescribeDisks "${aliyun_options}" --output json --filter Disks.Disk[0].Status 2>&1)
+        if [ $? -ne 0 ]; then
+            print_error "Failed in DescribeDisks disk ${DISK_ID}, response ${aliyun_call_result}"
+        fi
+        cur_status=$(echo "${aliyun_call_result}" | sed 's/"//g')
+        let loop_check_times=loop_check_times+1
+    done
+
+    if [ "${cur_status}"x != "${end_status}"x ]; then
+        print_error "Failed Disk ${DISK_ID} status check, expected end status is: ${end_status}, got ${cur_status}, start on ${start_status}"
+    fi
+}
+
+
+# - # https://help.aliyun.com/document_detail/25515.html?spm=5176.doc25513.6.868.xKltry
+attach_aliyun_disk() {
+    log "\t> [disk attach]" /tmp/rancher_abs.log
+
+    local delete_with_instance=${1:-"false"}
+
+    local aliyun_options="--InstanceId ${INSTANCE_ID} --DiskId ${DISK_ID} --DeleteWithInstance ${delete_with_instance}"
+    local aliyun_call_result=$(aliyuncli ecs AttachDisk ${aliyun_options} --output json 2>&1)
+    if [ $? -ne 0 ]; then
+        log "\t>> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+        echo "${aliyun_call_result}"
+        return 1
+    else
+        listening_aliyun_disk "Available" "In_use"
+
+        local get_system_available_device_path_result=$(find_available_device_path)
+        if [ $? -ne 0 ]; then
+            log "\t>> fail, ${get_system_available_device_path_result}" /tmp/rancher_abs.log
+            echo "${get_system_available_device_path_result}"
+            return 1
+        else
+            aliyun_options="--DiskId ${DISK_ID} --Description rancher_abs${get_system_available_device_path_result}"
+            aliyun_call_result=$(aliyuncli ecs ModifyDiskAttribute ${aliyun_options} --output json 2>&1)
+            if [ $? -ne 0 ]; then
+                log "\t>> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+                echo "${aliyun_call_result}"
+                return 1
+            else
+                log "\t>> success, ${get_system_available_device_path_result}" /tmp/rancher_abs.log
+                echo "${get_system_available_device_path_result}"
+            fi
+        fi
+    fi
+}
+
+
+# - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25515.6.870.LtJDTe
+detach_aliyun_disk() {
+    log "\t> [disk detach]" /tmp/rancher_abs.log
+
+    local aliyun_options="--InstanceId ${INSTANCE_ID}"
+    local aliyun_call_result=$(aliyuncli ecs DetachDisk ${aliyun_options} --DiskId ${DISK_ID} --output json 2>&1)
+    if [ $? -ne 0 ]; then
+        log "\t>> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+        echo "${aliyun_call_result}"
+        exit 1
+    else
+        listening_aliyun_disk "In_use" "Available"
+
+        aliyun_options="--DiskId ${DISK_ID} --Description rancher_detach"
+        aliyun_call_result=$(aliyuncli ecs ModifyDiskAttribute ${aliyun_options} --output json 2>&1)
+        if [ $? -ne 0 ]; then
+            log "\t>> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+            echo "${aliyun_call_result}"
+            exit 1
+        else 
+            log "\t>> success" /tmp/rancher_abs.log
+        fi
+    fi
+}
+
+
+init() {
+    get_instance_id
+
+    log "\n[init] on ${TRANSCATION_SEQ}" /tmp/rancher_abs.log
+
+    local region_id=$(curl http://100.100.100.200/latest/meta-data/region-id 2>/dev/null)
+
+    mkdir -p /root/.aliyuncli
+    echo -e "[default]\naliyun_access_key_id=${ECS_ACCESS_KEY_ID}\naliyun_access_key_secret=${ECS_ACCESS_KEY_SECRET}" > /root/.aliyuncli/credentials
+    echo -e "[default]\noutput=json\nregion=${region_id}" > /root/.aliyuncli/configure
+
+    log "> success" /tmp/rancher_abs.log
+    print_success
+}
+
+
+# After container has been created with volumne driver "rancher-abs"
+# - # https://help.aliyun.com/document_detail/25513.html?spm=5176.doc25514.6.866.Ou38fP
+create() {
+    # - The OPTS variable will be populated from the input JSON as a map of key/values
+    get_instance_id
+    # - Get zone id from metadata
+    local zone_id=$(curl http://100.100.100.200/latest/meta-data/zone-id 2>/dev/null)
+
+    log "\n[create] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID}" /tmp/rancher_abs.log
+
+    # - Check params
+    local disk_name
+    local size
+    local disk_category
+    local description
+    local snapshot_id
+    local client_token
+
+    DISK_ID=${OPTS['diskId']}
+    if [ -n "${DISK_ID}" ]; then
+        print_success
+        exit 0
+    fi
+
+    disk_name=${OPTS['diskName']}
+    if [ -z "${disk_name}" ]; then
+        # print_error "diskName is required"
+        disk_name=$(gen_disk_name)
+    fi
+
+    size=${OPTS['size']:-"5"}
+    disk_category=${OPTS['diskCategory']:-"cloud"}
+    description=${OPTS['description']}
+    snapshot_id=${OPTS['snapshotId']}
+
+    # - Generate a client_token
+    client_token=$(gen_client_token)
+
+    # - Append command options
+    local aliyun_options="--ZoneId ${zone_id} --DiskName ${disk_name} --Size ${size} --DiskCategory ${disk_category}"
+    if [ ! -z "${description}" ]; then
+        aliyun_options="${aliyun_options} --Description ${description}"
+    fi
+    if [ ! -z "${snapshot_id}" ]; then
+        aliyun_options="${aliyun_options} --SnapshotId ${snapshot_id}"
+    fi
+    if [ ! -z "${client_token}" ]; then
+        aliyun_options="${aliyun_options} --ClientToken ${client_token}"
+    fi
+
+    # - Use aliyuncli to create disk
+    local aliyun_call_result=$(aliyuncli ecs CreateDisk ${aliyun_options} --output json --filter DiskId 2>&1)
+    if [ $? -ne 0 ]; then
+        log "> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+        print_error "Failed in CreateDisk ${aliyun_options}, response ${aliyun_call_result}"
+    fi
+
+    DISK_ID=$(echo "${aliyun_call_result}" | sed "s/\"//g")
+    if [ -z "${DISK_ID}" ]; then
+        print_error "Failed in CreateDisk ${aliyun_options}, get ${aliyun_call_result}, but without diskId"
+    fi
+
+    listening_aliyun_disk "Creating" "Available"
+
+    log "> success, ${DISK_ID}" /tmp/rancher_abs.log
+    print_options \
+        created true \
+        name ${disk_name} \
+        diskId ${DISK_ID} \
+        regionId ${REGION_ID} \
+        zoneId ${zone_id}
+}
+
+
+# - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25513.6.869.Ir4McA
+delete() {
+    # - The OPTS variable will be populated from the input JSON as a map of key/values
+    get_instance_id
+
+    log "\n[delete] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID}" /tmp/rancher_abs.log
+
+    # - Check params
+    if [ -n "${OPTS['created']}" ]; then
+        print_success
+        exit 0
+    fi
+
+    DISK_ID=${OPTS['diskId']}
+    if [ -z "${DISK_ID}" ]; then
+        print_error "diskId is required"
+    fi
+
+    local aliyun_options="--DiskId ${DISK_ID}"
+    local aliyun_call_result=$(aliyuncli ecs DeleteDisk ${aliyun_options} --output json 2>&1)
+    if [ $? -ne 0 ]; then
+        log "> fail, ${aliyun_call_result}" /tmp/rancher_abs.log
+        print_error "Failed in DeleteDisk ${DISK_ID}, response ${aliyun_call_result}"
+    fi
+
+    log "> success" /tmp/rancher_abs.log
+    print_success
+}
+
+
+# - # https://help.aliyun.com/document_detail/25515.html?spm=5176.doc25516.6.868.sw11UL
+attach() {
+    # - The OPTS variable will be populated from the input JSON as a map of key/values
+    get_instance_id
+
+    log "\n[attach] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID}" /tmp/rancher_abs.log
+
+    # - Check params
+    local delete_with_instance
+    local name
+
+    name=${OPTS['name']}
+    if [ -z "${name}" ]; then
+        print_error "name is required"
+    fi
+
+    DISK_ID=${OPTS['diskId']}
+    if [ -z "${DISK_ID}" ]; then
+        print_error "diskId is required"
+    fi
+
+    delete_with_instance=${OPTS['deleteWithInstance']:-"false"}
+
+    log "> going to attach ${name} disk(id: ${DISK_ID}, delete: ${delete_with_instance})" /tmp/rancher_abs.log
+
+    # - Try to find attached device path
+    local attach_result
+    local device_path=$(get_attached_device_path)
+    if [ -z "${device_path}" ]; then
+        # - Attach in ECS
+        attach_result=$(attach_aliyun_disk ${delete_with_instance})
+        if [ $? -ne 0 ]; then
+            print_error "Failed in AttachDisk ${DISK_ID}, response ${attach_result}"
+        fi
+
+        device_path="${attach_result}"
+    else
+        device_path=$(echo ${device_path} | sed 's/"//g')
+    fi
+
+    log "> success, ${device_path}" /tmp/rancher_abs.log
+    print_device "${device_path}"
+}
+
+
+# - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25515.6.870.QVxTUO
+detach() {
+    # ${DEVICE} will be the device returned from attach, if any
+    get_instance_id
+
+    log "\n[detach] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID} in path ${DEVICE}" /tmp/rancher_abs.log
+
+    is_device_path_attaching "${DEVICE}"
+    if [ $? -eq 0 ]; then
+        local detach_result=$(detach_aliyun_disk)
+        if [ $? -ne 0 ]; then
+            log "> fail, ${detach_result}" /tmp/rancher_abs.log
+            print_error "Failed in AttachDisk disk ${DISK_ID}, response ${detach_result}"
+        fi
+
+        log "> success" /tmp/rancher_abs.log
+        print_success
+    else
+        log "> it isn't an attached device" /tmp/rancher_abs.log
+        print_error "${DEVICE} can't be recognized"
+    fi
+}
+
+
+# After attach success, call mountdest to mount DEVICE to MNT_DEST
+mountdest() {
+    # ${MNT_DEST} will be set with the directory where the filesystem should be mounted
+    # ${DEVICE} will be the device returned from attach, if any
+    # ${OPTS} will be populated with the options from the JSON input
+    get_instance_id
+
+    log "\n[mountdest] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID} in path ${DEVICE} to ${MNT_DEST}, opts ${OPTS}" /tmp/rancher_abs.log
+
+    local device_path=${DEVICE}
+    local mount_point=${MNT_DEST}
+    local mount_result
+
+    mkdir -p ${mount_point}
+    if [ -d ${device_path} ]; then
+        mount_result=$(mount --bind ${device_path} ${mount_point} 2>&1)
+    else
+        mount_result=$(mount ${device_path} ${mount_point} 2>&1)
+    fi
+
+    if [ $? -ne 0 ]; then
+        if [ "$(echo ${mount_result} | grep 'is already mounted')" ]; then
+            log "> fail, ${device_path} has already been mounted" /tmp/rancher_abs.log
+            print_error "${mount_result}"
+        fi
+
+        if [ "$(echo ${mount_result} | grep 'wrong fs type')" ]; then
+            log "> fail, try to fix. ${mount_result}" /tmp/rancher_abs.log
+
+            mount_result=$(mkfs.ext4 -F ${device_path} 2>&1)
+            if [ $? -ne 0 ]; then
+                log "> fail, can't format ${device_path}" /tmp/rancher_abs.log
+                print_error "${mount_result}"
+            fi
+
+            mount ${device_path} ${mount_point} 2>/dev/null
+        fi
+    fi
+
+    log "> success" /tmp/rancher_abs.log
+    print_success
+}
+
+
+# Before detach, call unmount to unmount MNT_DEST
+unmount() {
+    # ${MNT_DEST} will be set with the directory from which the filesystem should be unmounted
+    get_instance_id
+
+    log "\n[unmount] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID} in ${MNT_DEST}" /tmp/rancher_abs.log
+
+    local error
+    error=$(umount ${MNT_DEST} 2>&1)
+    if [ $? -ne 0 ]; then
+        if [ "$(echo ${error} | grep 'not mounted')" ]; then
+            log "> success, because ${MNT_DEST} didn't mounted, ${error}" /tmp/rancher_abs.log
+            print_success "not mounted"
+            exit 0
+        elif [ "$(echo ${error} | grep 'mountpoint not found')" ]; then
+            log "> success, because ${MNT_DEST} didn't found, ${error}" /tmp/rancher_abs.log
+            print_success "not found"
+            exit 0
+        else
+            log "> fail, ${error}" /tmp/rancher_abs.log
+            print_error "${error}"
+        fi
+    fi
+
+    log "> success" /tmp/rancher_abs.log
+    print_success "unmounted"
+}
+
+
+# Every script must call main as such
+main "$@"
