@@ -138,8 +138,11 @@ create() {
     local encrypted=${OPTS[encrypted]}
     local encrypted_option=""
     if [ "${encrypted}" == "true" ]; then
+      # This parameter is only required if you want to use a non-default CMK; if this parameter is not specified, the default CMK for EBS is used.
+      # The first time you create an encrypted volume in a region, a default CMK is created for you automatically.
+      # This key is used for Amazon EBS encryption unless you select a CMK that you created separately using AWS KMS.
       if [ -z "${OPTS[kmsKeyId]}" ]; then
-          print_error "kmsKeyId is required for an encrypted volume"
+          encrypted_option="--encrypted"
       else
           encrypted_option="--encrypted --kms-key-id ${OPTS[kmsKeyId]}"
       fi
