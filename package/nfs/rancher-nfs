@@ -46,6 +46,7 @@ unmount_nfs() {
 
 init() {
     rpcbind -f &>/dev/null &
+    validate
     print_success
 }
 
@@ -180,6 +181,24 @@ delete() {
     unmount_nfs "${mountDir}"
 
     print_success purged
+}
+
+validate() {
+    # default configuration
+    local host="$NFS_SERVER"
+    local exportDir="$MOUNT_DIR"
+    local opts="$MOUNT_OPTS"
+    local mountDir="$(tmp_dir)"
+
+    log_info "validation" "Validating NFS by Mounting $mountDir."
+
+    mount_nfs "$host" "$exportDir" "$mountDir" "$opts"
+
+    log_info "validation" "Validation success."
+
+    unmount_nfs "$mountDir"
+
+    log_info "validation" "Clean up success."
 }
 
 # Every script must call main as such
