@@ -34,7 +34,7 @@ wait_volume_transition() {
     if [ "${current_state}" != "${end_state}" ]; then
         print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state}"
     fi
-    if [ $retriess -ge 10 ]
+    if [ $retriess -ge 10 ]; then
         print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state} after ${retriess} retries"
         return 2
     fi
