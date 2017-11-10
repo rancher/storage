@@ -78,6 +78,11 @@ func (d *RancherStorageDriver) init() error {
 	return err
 }
 
+func (d *RancherStorageDriver) Validate() error {
+	_, err := d.exec("validate")
+	return err
+}
+
 func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 	logRequest("create", &request)
 

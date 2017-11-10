@@ -15,6 +15,11 @@ init()
     print_success
 }
 
+validate()
+{
+    print_success
+}
+
 create()
 {
     # The OPTS variable will be populated from the input JSON as a map of key/values

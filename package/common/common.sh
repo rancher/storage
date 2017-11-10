@@ -14,6 +14,7 @@ usage() {
     err "\t$0 mount <mount dir> <device> <json params>"
     err "\t$0 unmount <mount dir> <json params>"
     err "\t$0 init"
+    err "\t$0 validate"
     exit 1
 }
 
@@ -21,7 +22,7 @@ main()
 {
 
     case $1 in
-        init)
+        init|validate)
             "$@"
             ;;
         create|delete|attach)

@@ -105,6 +105,11 @@ init()
     print_success
 }
 
+validate()
+{
+    print_success
+}
+
 create() {
     if [ ! -z "${OPTS[volumeID]}" ]; then
         print_success
