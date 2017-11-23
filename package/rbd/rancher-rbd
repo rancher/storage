@@ -8,6 +8,45 @@ fi
 DEVICE_TIMEOUT=10
 RBD_LOCK="has_mapped"
 
+format_on_create()
+{
+    local device
+    local OUT
+    local pool=$1
+    local name=$2
+    local timeout=${DEVICE_TIMEOUT}
+
+    OUT=$(rbd map ${pool}/${name})
+    if [ $? -ne 0  ]; then
+        print_error "format_on_create: ${OUT}"
+    fi
+
+    device=${OUT}
+    until [ -b ${device} ]; do
+        ((timeout--))
+        if [ ${timeout} -le 0 ]; then
+            print_error "format_on_create: attach timed out"
+        fi
+        sleep 1
+    done
+
+    local LOCK_FILE="/var/run/lock/${pool}_${name}.lock"
+    while [ -f "${LOCK_FILE}" ]; do sleep 2; done
+
+    touch ${LOCK_FILE}
+    trap "rm -f ${LOCK_FILE}" EXIT
+    if ! OUT=$(mkfs.ext4 -F "${device}" 2>&1); then
+        print_error "${OUT}"
+    fi
+
+    OUT=$(rbd unmap ${device} 2>&1)
+    if [ $? -ne 0 ]; then
+        print_error "${OUT}"
+    fi
+
+    log_info ${pool}/${name} "format_on_create: Device has beed formated: ${device}"
+}
+
 init()
 {
     print_success
@@ -30,6 +69,8 @@ create()
     if [ $? -ne 0  ]; then
         print_error "${OUT}"
     fi
+
+    format_on_create ${pool} ${name}
 
     print_options created true name ${name}
 }
@@ -104,7 +145,7 @@ attach()
     fi
 
     device=${OUT}
-    timeout=${DEVICE_TIMEOUT}
+    local timeout=${DEVICE_TIMEOUT}
     until [ -b ${device} ]; do
         ((timeout--))
         if [ ${timeout} -le 0 ]; then
@@ -172,26 +213,7 @@ mountdest()
     fi
 
     if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
-        if [ $(echo ${OUT} | grep 'mount: wrong fs type,' | wc -l) -gt 0 ]; then
-
-            LOCK_FILE="/var/run/lock/${name}.lock"
-            while [ -f "${LOCK_FILE}" ]; do sleep 2; done
-
-            touch ${LOCK_FILE}
-            trap "rm -f ${LOCK_FILE}" EXIT
-
-            if OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
-                print_success
-                exit 0
-            fi
-
-            if ! OUT=$(mkfs.ext4 -F "${DEVICE}" 2>&1); then
-                print_error "${OUT}"
-            fi
-            if ! OUT=$(mount "${DEVICE}" "${MNT_DEST}" 2>&1); then
-                print_error "${OUT}"
-            fi
-        fi
+        print_error "${OUT}"
     fi
     print_success
 }
