@@ -62,6 +62,10 @@ func main() {
 			Usage:  "The DOCKER_HOST to connect to",
 			EnvVar: "DOCKER_HOST",
 		},
+		cli.BoolFlag{
+			Name:  "save-on-attach",
+			Usage: "Save volume to Rancher on Volume attach call",
+		},
 	}
 	logrus.Info("Running")
 	app.Run(os.Args)
@@ -106,6 +110,8 @@ func start(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	d.SaveOnAttach = c.Bool("save-on-attach")
 
 	logrus.Infof("Starting plugin for %s", driverName)
 	h := volume.NewHandler(d)
