@@ -50,6 +50,7 @@ func NewRancherStorageDriver(driver string, client *client.RancherClient, cli *d
 		mounter:         &mount.SafeFormatAndMount{Interface: mount.New(), Runner: exec.New()},
 		FsType:          DefaultFsType,
 		cli:             cli,
+		SaveOnAttach:    false,
 	}
 	if err := d.init(); err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize")
@@ -71,6 +72,7 @@ type RancherStorageDriver struct {
 	FsType          string
 	cli             *dockerClient.Client
 	mountLock       sync.Mutex
+	SaveOnAttach    bool
 }
 
 func (d *RancherStorageDriver) init() error {
@@ -214,6 +216,17 @@ func (d *RancherStorageDriver) Attach(request AttachRequest) volume.Response {
 	if err != nil {
 		response.Err = err.Error()
 		return response
+	}
+
+	// If SaveOnAttach, update driver Options.
+	if d.SaveOnAttach {
+		options := getOptions(rVol)
+		options["device"] = output.Device
+		if err := d.state.Save(request.Name, options, 0); err != nil {
+			logrus.Errorf("Save volume name=%s failed, err: %s", request.Name, err)
+			response.Err = err.Error()
+			return response
+		}
 	}
 
 	return response
