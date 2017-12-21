@@ -35,41 +35,41 @@ gen_disk_name() {
 # - # https://m.aliyun.com/yunqi/articles/72041?t=t1
 get_instance_id() {
     TRANSCATION_SEQ=$(date "+%Y%m%d%H%M%S")
-    INSTANCE_ID=$(curl http://100.100.100.200/latest/meta-data/instance-id 2>/dev/null)
+    INSTANCE_ID=$(curl --connect-timeout 5 --max-time 10 http://100.100.100.200/latest/meta-data/instance-id 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        print_error "Failed in query metadata! Only when VPC is selected as the network type of the instance, you can get the metadata."
+    fi
 }
 
 
 # - # https://help.aliyun.com/document_detail/25514.html?spm=5176.doc25516.6.868.8l8Kr9
 get_attached_device_path() {
-    local aliyun_options="--DiskIds '[\"${DISK_ID}\"]'"
-    local aliyun_call_result=$(aliyuncli ecs DescribeDisks "${aliyun_options}" --output json --filter Disks.Disk[0].Description 2>&1)
+    local region_id=$(curl http://100.100.100.200/latest/meta-data/region-id 2>/dev/null)
+
+    local aliyun_options="--DiskType data --RegionId ${region_id}"
+    local aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
     if [ $? -ne 0 ]; then
         print_error "Failed in DescribeDisks ${DISK_ID}, response ${aliyun_call_result}"
     fi
 
-    if [ -n "${aliyun_call_result}" ]; then
-        aliyun_call_result=$(echo "${aliyun_call_result}" | sed "s/\"//g")
-    fi
-
-    if [ "$(echo ${aliyun_call_result} | grep 'rancher_abs')" ]; then
-        aliyun_call_result=${aliyun_call_result#'/rancher_abs/'}
-    else
-        aliyun_call_result=""
-    fi
-
+    aliyun_call_result=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.DiskId==\"${DISK_ID}\") | .Description" | sed 's/"//g')
+    # if [ -n "${aliyun_call_result}" ]; then
+    #     aliyun_call_result=$(echo "${aliyun_call_result}" | sed "s/\"//g")
+    # fi
+    aliyun_call_result=${aliyun_call_result#rancher_abs}
     echo "${aliyun_call_result}"
 }
 
 
 # Find avaiable device path in os, such as '/dev/vdb', '/dev/vdc',..., '/dev/vdz'
 find_available_device_path() {
-    local last_attach_device=$(lsblk -o KNAME | sed -e 's/^/\/dev\//' | awk 'END {print}')
+    local last_attach_device=$(lsblk -o KNAME,MOUNTPOINT | sed -e 's/^/\/dev\//' | awk '{if($2 ~ /^\w*$/){print $1}}' | awk 'END{print}')
     local mounted_attach_device=$(df -h | grep -w ${last_attach_device} | awk '{print $6}')
-    
-    if [ -n "${mounted_attach_device}" ]; then 
+
+    if [ -n "${mounted_attach_device}" ]; then
         echo "${last_attach_device} is using on ${mounted_attach_device}"
-        return 1
-    else 
+        exit 1
+    else
         echo "${last_attach_device}"
     fi
 }
@@ -87,7 +87,7 @@ is_device_path_attaching() {
 
     DISK_ID=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.Description==\"rancher_abs${device_path}\") | .DiskId" | sed 's/"//g')
     if [ -z "${DISK_ID}" ]; then
-        return 1
+        exit 1
     fi
 }
 
@@ -98,7 +98,7 @@ listening_aliyun_disk() {
     local start_status=$1
     local end_status=$2
     local cur_status=${start_status}
-    local loop_check_times=0 
+    local loop_check_times=0
 
     local aliyun_options="--DiskIds '[\"${DISK_ID}\"]'"
     local aliyun_call_result
@@ -133,7 +133,7 @@ attach_aliyun_disk() {
     if [ $? -ne 0 ]; then
         log "\t>> fail, ${aliyun_call_result}"
         echo "${aliyun_call_result}"
-        return 1
+        exit 1
     else
         listening_aliyun_disk "Available" "In_use"
 
@@ -141,14 +141,14 @@ attach_aliyun_disk() {
         if [ $? -ne 0 ]; then
             log "\t>> fail, ${get_system_available_device_path_result}"
             echo "${get_system_available_device_path_result}"
-            return 1
+            exit 1
         else
             aliyun_options="--DiskId ${DISK_ID} --Description rancher_abs${get_system_available_device_path_result}"
             aliyun_call_result=$(aliyuncli ecs ModifyDiskAttribute ${aliyun_options} --output json 2>&1)
             if [ $? -ne 0 ]; then
                 log "\t>> fail, ${aliyun_call_result}"
                 echo "${aliyun_call_result}"
-                return 1
+                exit 1
             else
                 log "\t>> success, ${get_system_available_device_path_result}"
                 echo "${get_system_available_device_path_result}"
@@ -227,12 +227,11 @@ create() {
 
     disk_name=${OPTS['diskName']}
     if [ -z "${disk_name}" ]; then
-        # print_error "diskName is required"
         disk_name=$(gen_disk_name)
     fi
 
-    size=${OPTS['size']:-"5"}
-    disk_category=${OPTS['diskCategory']:-"cloud"}
+    size=${OPTS['size']:-"20"}
+    disk_category=${OPTS['diskCategory']:-"cloud_ssd"}
     description=${OPTS['description']}
     snapshot_id=${OPTS['snapshotId']}
 
@@ -333,7 +332,7 @@ attach() {
 
     log "> device_path is ${device_path}"
 
-    if [ -z "${device_path}" ]; then
+    if [ -z "${device_path}" ] || [ "${device_path}"x = "rancher_detach"x ]; then
         # - Attach in ECS
         attach_result=$(attach_aliyun_disk ${delete_with_instance})
         if [ $? -ne 0 ]; then
@@ -341,8 +340,6 @@ attach() {
         fi
 
         device_path="${attach_result}"
-    else
-        device_path=$(echo ${device_path} | sed 's/"//g')
     fi
 
     log "> success, ${device_path}"
@@ -400,7 +397,16 @@ mountdest() {
             print_error "${mount_result}"
         fi
 
+        local try_fix=0
+        # for DiskCatagory: cloud
         if [ "$(echo ${mount_result} | grep 'wrong fs type')" ]; then
+            try_fix=1
+        # for DiskCatagory: cloud_ssd
+        elif [ "$(echo ${mount_result} | grep 'unknown filesystem type')" ]; then
+            try_fix=1
+        fi
+
+        if [ "${try_fix}"x = "1"x ]; then
             log "> fail, try to fix. ${mount_result}"
 
             mount_result=$(mkfs.ext4 -F ${device_path} 2>&1)
@@ -409,7 +415,11 @@ mountdest() {
                 print_error "${mount_result}"
             fi
 
-            mount ${device_path} ${mount_point} 2>/dev/null
+            mount_result=$(mount ${device_path} ${mount_point} 2>&1)
+            if [ $? -ne 0 ]; then
+                log "> fail, can't mount ${device_path} ${mountpoint}"
+                print_error "${mount_result}"
+            fi
         fi
     fi
 
