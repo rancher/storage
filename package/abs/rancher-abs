@@ -10,6 +10,8 @@ readonly LOOP_CHECK_TIMES=30
 readonly WAIT_SLEEP_TIME_IN_SECONDS=1
 TRANSCATION_SEQ=""
 INSTANCE_ID=""
+REGION_ID=""
+ZONE_ID=""
 DISK_ID=""
 
 
@@ -41,12 +43,19 @@ get_instance_id() {
     fi
 }
 
+get_region_id() {
+    REGION_ID=$(curl http://100.100.100.200/latest/meta-data/region-id 2>/dev/null)
+}
+
+get_zone_id() {
+    ZONE_ID=$(curl http://100.100.100.200/latest/meta-data/zone-id 2>/dev/null)
+}
 
 # - # https://help.aliyun.com/document_detail/25514.html?spm=5176.doc25516.6.868.8l8Kr9
 get_attached_device_path() {
-    local region_id=$(curl http://100.100.100.200/latest/meta-data/region-id 2>/dev/null)
+    get_region_id
 
-    local aliyun_options="--DiskType data --RegionId ${region_id}"
+    local aliyun_options="--DiskType data --RegionId ${REGION_ID}"
     local aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
     if [ $? -ne 0 ]; then
         print_error "Failed in DescribeDisks ${DISK_ID}, response ${aliyun_call_result}"
@@ -190,11 +199,11 @@ init() {
     rm -f /tmp/rancher_abs.log
     log "\n[init] on ${TRANSCATION_SEQ}"
 
-    local region_id=$(curl http://100.100.100.200/latest/meta-data/region-id 2>/dev/null)
+    get_region_id
 
     mkdir -p /root/.aliyuncli
     echo -e "[default]\naliyun_access_key_id=${ECS_ACCESS_KEY_ID}\naliyun_access_key_secret=${ECS_ACCESS_KEY_SECRET}" > /root/.aliyuncli/credentials
-    echo -e "[default]\noutput=json\nregion=${region_id}" > /root/.aliyuncli/configure
+    echo -e "[default]\noutput=json\nregion=${REGION_ID}" > /root/.aliyuncli/configure
 
     log "> success"
     print_success
@@ -207,7 +216,7 @@ create() {
     # - The OPTS variable will be populated from the input JSON as a map of key/values
     get_instance_id
     # - Get zone id from metadata
-    local zone_id=$(curl http://100.100.100.200/latest/meta-data/zone-id 2>/dev/null)
+    get_zone_id
 
     log "\n[create] on ${TRANSCATION_SEQ}, with instance ${INSTANCE_ID}"
 
@@ -239,7 +248,7 @@ create() {
     client_token=$(gen_client_token)
 
     # - Append command options
-    local aliyun_options="--ZoneId ${zone_id} --DiskName ${disk_name} --Size ${size} --DiskCategory ${disk_category}"
+    local aliyun_options="--ZoneId ${ZONE_ID} --DiskName ${disk_name} --Size ${size} --DiskCategory ${disk_category}"
     if [ ! -z "${description}" ]; then
         aliyun_options="${aliyun_options} --Description ${description}"
     fi
@@ -270,7 +279,7 @@ create() {
         name ${disk_name} \
         diskId ${DISK_ID} \
         regionId ${REGION_ID} \
-        zoneId ${zone_id}
+        zoneId ${ZONE_ID}
 }
 
 
