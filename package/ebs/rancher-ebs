@@ -95,6 +95,13 @@ find_matching_linux_device_path() {
             break
         fi
 
+	local vol_num="${VOLUME_ID:4}"
+        local linux_device_path=`nvme list | grep "$vol_num" | cut -f1 -d" "`
+        if [ !  -z "$linux_device_path" ]; then
+            echo ${linux_device_path}
+	    break
+        fi
+
         sleep ${WAIT_SLEEP_TIME_IN_SECONDS}
     done
 }
