@@ -166,6 +166,31 @@ attach_aliyun_disk() {
     fi
 }
 
+do_format() {
+    local detach_result
+    local attach_result
+    attach_result=$(attach_aliyun_disk)
+    if [ $? -ne 0 ]; then
+        print_error "Failed in AttachDisk ${DISK_ID}, response ${attach_result}"
+    fi
+
+    device_path="${attach_result}"
+
+    mount_result=$(mkfs.ext4 -F ${device_path} 2>&1)
+    if [ $? -ne 0 ]; then
+        log "> fail, can't format ${device_path}"
+        print_error "${mount_result}"
+    fi
+
+    is_device_path_attaching "${device_path}"
+    if [ $? -eq 0 ]; then
+        detach_result=$(detach_aliyun_disk)
+        if [ $? -ne 0 ]; then
+            log "> fail, ${detach_result}"
+            print_error "Failed in AttachDisk disk ${DISK_ID}, response ${detach_result}"
+        fi
+    fi
+}
 
 # - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25515.6.870.LtJDTe
 detach_aliyun_disk() {
@@ -272,6 +297,10 @@ create() {
     fi
 
     listening_aliyun_disk "Creating" "Available"
+    
+    if [ -z "${snapshot_id}" ]; then
+        do_format
+    fi
 
     log "> success, ${DISK_ID}"
     print_options \
@@ -401,35 +430,8 @@ mountdest() {
     fi
 
     if [ $? -ne 0 ]; then
-        if [ "$(echo ${mount_result} | grep 'is already mounted')" ]; then
-            log "> fail, ${device_path} has already been mounted"
-            print_error "${mount_result}"
-        fi
-
-        local try_fix=0
-        # for DiskCatagory: cloud
-        if [ "$(echo ${mount_result} | grep 'wrong fs type')" ]; then
-            try_fix=1
-        # for DiskCatagory: cloud_ssd
-        elif [ "$(echo ${mount_result} | grep 'unknown filesystem type')" ]; then
-            try_fix=1
-        fi
-
-        if [ "${try_fix}"x = "1"x ]; then
-            log "> fail, try to fix. ${mount_result}"
-
-            mount_result=$(mkfs.ext4 -F ${device_path} 2>&1)
-            if [ $? -ne 0 ]; then
-                log "> fail, can't format ${device_path}"
-                print_error "${mount_result}"
-            fi
-
-            mount_result=$(mount ${device_path} ${mount_point} 2>&1)
-            if [ $? -ne 0 ]; then
-                log "> fail, can't mount ${device_path} ${mountpoint}"
-                print_error "${mount_result}"
-            fi
-        fi
+        log "> fail, can't mount ${device_path} ${mountpoint},${mount_result}"
+        print_error "${mount_result}"
     fi
 
     log "> success"
