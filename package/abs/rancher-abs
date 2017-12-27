@@ -56,7 +56,8 @@ get_attached_device_path() {
     get_region_id
 
     local aliyun_options="--DiskType data --RegionId ${REGION_ID}"
-    local aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
     if [ $? -ne 0 ]; then
         print_error "Failed in DescribeDisks ${DISK_ID}, response ${aliyun_call_result}"
     fi
@@ -73,7 +74,8 @@ is_device_path_attaching() {
     local device_path=$1
 
     local aliyun_options="--InstanceId ${INSTANCE_ID} --Status In_use"
-    local aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs DescribeDisks ${aliyun_options} --output json --filter Disks 2>&1)
     if [ $? -ne 0 ]; then
         print_error "Failed in DescribeDisks instance ${INSTANCE_ID}, response ${aliyun_call_result}"
     fi
@@ -124,7 +126,8 @@ attach_aliyun_disk() {
     local detach_result
     local attached_device_path
     local aliyun_options="--InstanceId ${INSTANCE_ID} --DiskId ${DISK_ID} --DeleteWithInstance ${delete_with_instance}"
-    local aliyun_call_result=$(aliyuncli ecs AttachDisk ${aliyun_options} --output json 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs AttachDisk ${aliyun_options} --output json 2>&1)
     if [ $? -ne 0 ]; then
         # try detach
         detach_result=$(detach_aliyun_disk)
@@ -193,7 +196,8 @@ detach_aliyun_disk() {
         exit 1
     fi
     local aliyun_options="--InstanceId ${instance_of_disk}"
-    local aliyun_call_result=$(aliyuncli ecs DetachDisk ${aliyun_options} --DiskId ${DISK_ID} --output json 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs DetachDisk ${aliyun_options} --DiskId ${DISK_ID} --output json 2>&1)
     if [ $? -ne 0 ]; then
         log "\t>> fail, ${aliyun_call_result}"
         echo "${aliyun_call_result}"
@@ -281,7 +285,8 @@ create() {
     fi
 
     # - Use aliyuncli to create disk
-    local aliyun_call_result=$(aliyuncli ecs CreateDisk ${aliyun_options} --output json --filter DiskId 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs CreateDisk ${aliyun_options} --output json --filter DiskId 2>&1)
     if [ $? -ne 0 ]; then
         log "> fail, ${aliyun_call_result}"
         print_error "Failed in CreateDisk ${aliyun_options}, response ${aliyun_call_result}"
@@ -322,7 +327,8 @@ delete() {
     fi
 
     local aliyun_options="--DiskId ${DISK_ID}"
-    local aliyun_call_result=$(aliyuncli ecs DeleteDisk ${aliyun_options} --output json 2>&1)
+    local aliyun_call_result
+    aliyun_call_result=$(aliyuncli ecs DeleteDisk ${aliyun_options} --output json 2>&1)
     if [ $? -ne 0 ]; then
         log "> fail, ${aliyun_call_result}"
         print_error "Failed in DeleteDisk ${DISK_ID}, response ${aliyun_call_result}"
@@ -383,6 +389,7 @@ attach() {
 
 # - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25515.6.870.QVxTUO
 detach() {
+    local detach_result
     # ${DEVICE} will be the device returned from attach, if any
     get_instance_id
 
@@ -390,7 +397,7 @@ detach() {
 
     is_device_path_attaching "${DEVICE}"
     if [ $? -eq 0 ]; then
-        local detach_result=$(detach_aliyun_disk)
+        detach_result=$(detach_aliyun_disk)
         if [ $? -ne 0 ]; then
             log "> fail, ${detach_result}"
             print_error "Failed in AttachDisk disk ${DISK_ID}, response ${detach_result}"
