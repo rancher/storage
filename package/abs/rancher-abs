@@ -61,27 +61,11 @@ get_attached_device_path() {
         print_error "Failed in DescribeDisks ${DISK_ID}, response ${aliyun_call_result}"
     fi
 
-    aliyun_call_result=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.DiskId==\"${DISK_ID}\") | .Description" | sed 's/"//g')
-    # if [ -n "${aliyun_call_result}" ]; then
-    #     aliyun_call_result=$(echo "${aliyun_call_result}" | sed "s/\"//g")
-    # fi
-    aliyun_call_result=${aliyun_call_result#rancher_abs}
+    # filter by both disk id & host id.
+    aliyun_call_result=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.DiskId==\"${DISK_ID}\") | select(.InstanceId==\"${INSTANCE_ID}\") | .Device" | sed 's/xvd/vd/g' | sed 's/"//g')
     echo "${aliyun_call_result}"
 }
 
-
-# Find avaiable device path in os, such as '/dev/vdb', '/dev/vdc',..., '/dev/vdz'
-find_available_device_path() {
-    local last_attach_device=$(lsblk -o KNAME,MOUNTPOINT | sed -e 's/^/\/dev\//' | awk '{if($2 ~ /^\w*$/){print $1}}' | awk 'END{print}')
-    local mounted_attach_device=$(df -h | grep -w ${last_attach_device} | awk '{print $6}')
-
-    if [ -n "${mounted_attach_device}" ]; then
-        echo "${last_attach_device} is using on ${mounted_attach_device}"
-        exit 1
-    else
-        echo "${last_attach_device}"
-    fi
-}
 
 
 # Judge device path has been attached and get the attached disk id
@@ -94,7 +78,8 @@ is_device_path_attaching() {
         print_error "Failed in DescribeDisks instance ${INSTANCE_ID}, response ${aliyun_call_result}"
     fi
 
-    DISK_ID=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.Description==\"rancher_abs${device_path}\") | .DiskId" | sed 's/"//g')
+    device_path=$(echo "${device_path}" | sed 's/vd/xvd/g')
+    DISK_ID=$(echo "${aliyun_call_result}" | jq " .Disk[] | select(.Device==\"${device_path}\") | .DiskId" | sed 's/xvd/vd/g' | sed 's/"//g')
     if [ -z "${DISK_ID}" ]; then
         exit 1
     fi
@@ -136,32 +121,37 @@ attach_aliyun_disk() {
     log "\t> [disk attach]"
 
     local delete_with_instance=${1:-"false"}
-
+    local detach_result
+    local attached_device_path
     local aliyun_options="--InstanceId ${INSTANCE_ID} --DiskId ${DISK_ID} --DeleteWithInstance ${delete_with_instance}"
     local aliyun_call_result=$(aliyuncli ecs AttachDisk ${aliyun_options} --output json 2>&1)
     if [ $? -ne 0 ]; then
-        log "\t>> fail, ${aliyun_call_result}"
-        echo "${aliyun_call_result}"
+        # try detach
+        detach_result=$(detach_aliyun_disk)
+        if [ $? -ne 0 ]; then
+            log "\t>> fail, ${detach_result}"
+            echo "${detach_result}"
+            exit 1
+        fi
+        aliyun_call_result=$(aliyuncli ecs AttachDisk ${aliyun_options} --output json 2>&1)
+    fi
+    listening_aliyun_disk "Available" "In_use"
+
+    attached_device_path=$(get_attached_device_path)
+    if [ $? -ne 0 ]; then
+        log "\t>> fail, ${attached_device_path}"
+        echo "${attached_device_path}"
         exit 1
     else
-        listening_aliyun_disk "Available" "In_use"
-
-        local get_system_available_device_path_result=$(find_available_device_path)
+        aliyun_options="--DiskId ${DISK_ID} --Description rancher_abs${attached_device_path}"
+        aliyun_call_result=$(aliyuncli ecs ModifyDiskAttribute ${aliyun_options} --output json 2>&1)
         if [ $? -ne 0 ]; then
-            log "\t>> fail, ${get_system_available_device_path_result}"
-            echo "${get_system_available_device_path_result}"
+            log "\t>> fail, ${aliyun_call_result}"
+            echo "${aliyun_call_result}"
             exit 1
         else
-            aliyun_options="--DiskId ${DISK_ID} --Description rancher_abs${get_system_available_device_path_result}"
-            aliyun_call_result=$(aliyuncli ecs ModifyDiskAttribute ${aliyun_options} --output json 2>&1)
-            if [ $? -ne 0 ]; then
-                log "\t>> fail, ${aliyun_call_result}"
-                echo "${aliyun_call_result}"
-                exit 1
-            else
-                log "\t>> success, ${get_system_available_device_path_result}"
-                echo "${get_system_available_device_path_result}"
-            fi
+            log "\t>> success, ${attached_device_path}"
+            echo "${attached_device_path}"
         fi
     fi
 }
@@ -195,8 +185,14 @@ do_format() {
 # - # https://help.aliyun.com/document_detail/25516.html?spm=5176.doc25515.6.870.LtJDTe
 detach_aliyun_disk() {
     log "\t> [disk detach]"
-
-    local aliyun_options="--InstanceId ${INSTANCE_ID}"
+    local instance_of_disk
+    instance_of_disk=$(aliyuncli ecs DescribeDisks --DiskIds "[\"${DISK_ID}\"]" --filter Disks.Disk[0].InstanceId |sed 's/"//g')
+    if [ $? -ne 0 ]; then
+        log "\t>> fail DescribeDisks, ${instance_of_disk}"
+        echo "${instance_of_disk}"
+        exit 1
+    fi
+    local aliyun_options="--InstanceId ${instance_of_disk}"
     local aliyun_call_result=$(aliyuncli ecs DetachDisk ${aliyun_options} --DiskId ${DISK_ID} --output json 2>&1)
     if [ $? -ne 0 ]; then
         log "\t>> fail, ${aliyun_call_result}"
