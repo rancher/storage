@@ -14,6 +14,7 @@ import (
 
 const (
 	metadataURL = "http://169.254.169.250/2015-12-19"
+	detached    = "detached"
 )
 
 var goodStates = map[string]bool{
@@ -24,6 +25,14 @@ var goodStates = map[string]bool{
 	"removing":          true,
 	"updating-active":   true,
 	"updating-inactive": true,
+}
+
+var rancherDrivers = map[string]bool{
+	"rancher-ebs":      true,
+	"rancher-efs":      true,
+	"rancher-nfs":      true,
+	"rancher-secrets":  true,
+	"rancher-longhorn": true,
 }
 
 type RancherState struct {

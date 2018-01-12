@@ -13,10 +13,10 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/docker/pkg/locker"
 	dockerClient "github.com/docker/engine-api/client"
 	"github.com/docker/engine-api/types"
 	"github.com/docker/engine-api/types/events"
-	"github.com/docker/engine-api/types/filters"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher/v2"
@@ -32,6 +32,7 @@ const (
 	DefaultBasedir = "/var/lib/rancher/volumes"
 	DefaultFsType  = "ext4"
 	DefaultScope   = "global"
+	state          = "state"
 )
 
 func NewRancherStorageDriver(driver string, client *client.RancherClient, cli *dockerClient.Client) (*RancherStorageDriver, error) {
@@ -51,12 +52,16 @@ func NewRancherStorageDriver(driver string, client *client.RancherClient, cli *d
 		FsType:          DefaultFsType,
 		cli:             cli,
 		SaveOnAttach:    false,
+		mountMap:        map[string]map[string]struct{}{},
+		lock:            locker.New(),
+		Rancher:         rancherDrivers[driver],
 	}
 	if err := d.init(); err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize")
 	}
+	go syncMountMap(d, cli)
 	d.kickGC()
-	go d.watchContainerDeletes()
+	go d.watchContainerEvents()
 	return d, nil
 }
 
@@ -73,6 +78,10 @@ type RancherStorageDriver struct {
 	cli             *dockerClient.Client
 	mountLock       sync.Mutex
 	SaveOnAttach    bool
+	mountMap        map[string]map[string]struct{}
+	mountMapLock    sync.RWMutex
+	lock            *locker.Locker
+	Rancher         bool
 }
 
 func (d *RancherStorageDriver) init() error {
@@ -81,6 +90,12 @@ func (d *RancherStorageDriver) init() error {
 }
 
 func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
+	// we need to lock the name to make create idempotency
+	if d.Rancher {
+		d.lock.Lock(request.Name)
+		defer d.lock.Unlock(request.Name)
+	}
+
 	logRequest("create", &request)
 
 	response := volume.Response{}
@@ -325,17 +340,21 @@ func (d *RancherStorageDriver) unmount(mntDest string) error {
 		return nil
 	}
 
+	logrus.Infof("Detaching %s", device)
 	if _, err := d.exec("detach", device); err != nil && err != errNotSupported {
 		return errors.Wrapf(err, "detach %s", device)
 	}
 
-	if notmnt, err := d.mounter.IsLikelyNotMountPoint(mntDest); err != nil {
-		return errors.Wrap(err, "Lookup mount")
-	} else if notmnt {
-		if err := os.Remove(mntDest); err != nil {
-			return errors.Wrapf(err, "delete %s", mntDest)
+	if _, err := os.Stat(mntDest); err == nil {
+		if notmnt, err := d.mounter.IsLikelyNotMountPoint(mntDest); err != nil {
+			return errors.Wrap(err, "Lookup mount")
+		} else if notmnt {
+			if err := os.Remove(mntDest); err != nil {
+				return errors.Wrapf(err, "delete %s", mntDest)
+			}
 		}
 	}
+	logrus.Infof("Umounting %s done", mntDest)
 
 	return nil
 }
@@ -390,38 +409,21 @@ func (d *RancherStorageDriver) gc() error {
 		return nil
 	}
 
-	knownToDocker := map[string]bool{}
-	volumeResp, err := d.cli.VolumeList(context.Background(), filters.NewArgs())
-	if err != nil {
-		return err
-	}
-	for _, volume := range volumeResp.Volumes {
-		if volume.Driver == d.DriverName {
-			knownToDocker[d.getMntDest(volume.Name)] = true
-		}
-	}
-
-	args := filters.NewArgs()
-	args.Add("dangling", "true")
-	volumeResp, err = d.cli.VolumeList(context.Background(), args)
-	if err != nil {
-		return err
-	}
-	for _, volume := range volumeResp.Volumes {
-		if volume.Driver == d.DriverName {
-			dest := d.getMntDest(volume.Name)
-			if toCheck[dest] {
-				toUnmount[d.getMntDest(volume.Name)] = true
+	d.mountMapLock.RLock()
+	for src, ids := range d.mountMap {
+		if len(ids) == 0 {
+			if toCheck[src] {
+				toUnmount[src] = true
 			}
 		}
 	}
-
 	for mount := range toCheck {
-		if !knownToDocker[mount] {
+		if _, ok := d.mountMap[mount]; !ok {
 			logrus.Errorf("Mounted but not registered in Docker: %s", mount)
 			toUnmount[mount] = true
 		}
 	}
+	d.mountMapLock.RUnlock()
 
 	var lastErr error
 	for mnt := range toUnmount {
@@ -434,11 +436,30 @@ func (d *RancherStorageDriver) gc() error {
 	return lastErr
 }
 
-func (d *RancherStorageDriver) watchContainerDeletes() error {
+func (d *RancherStorageDriver) ListAllVolumes() ([]*volume.Volume, error) {
+	vols, err := d.state.client.Volume.List(&client.ListOpts{
+		Filters: map[string]interface{}{
+			"removed_null":    "true",
+			"limit":           "-1",
+			"storageDriverId": d.state.driverID,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := []*volume.Volume{}
+	for _, vol := range vols.Data {
+		result = append(result, volToVol(vol))
+	}
+	return result, nil
+}
+
+func (d *RancherStorageDriver) watchContainerEvents() error {
 	for {
 		reader, err := d.cli.Events(context.Background(), types.EventsOptions{})
 		if err != nil {
-			return err
+			logrus.Error(err)
+			continue
 		}
 		defer reader.Close()
 
@@ -450,9 +471,56 @@ func (d *RancherStorageDriver) watchContainerDeletes() error {
 			}
 			if event.Status == "destroy" {
 				logrus.Infof("container %s destroyed", event.ID)
+				d.mountMapLock.Lock()
+				for _, mountsMap := range d.mountMap {
+					delete(mountsMap, event.ID)
+				}
+				d.mountMapLock.Unlock()
 				d.kickGC()
+			} else if event.Status == "start" {
+				inspect, err := d.cli.ContainerInspect(context.Background(), event.ID)
+				if err != nil {
+					logrus.Errorf("failed to inspect new created container, err: %v", err)
+					continue
+				}
+				d.mountMapLock.Lock()
+				for _, mount := range inspect.Mounts {
+					if strings.HasPrefix(mount.Source, d.getMntRoot()) {
+						if ids, ok := d.mountMap[mount.Source]; ok {
+							ids[event.ID] = struct{}{}
+						} else {
+							d.mountMap[mount.Source] = map[string]struct{}{}
+							d.mountMap[mount.Source][event.ID] = struct{}{}
+						}
+					}
+				}
+				d.mountMapLock.Unlock()
 			}
 		}
 		time.Sleep(2 * time.Second)
+	}
+}
+
+func syncMountMap(d *RancherStorageDriver, cli *dockerClient.Client) {
+	for {
+		containers, err := cli.ContainerList(context.Background(), types.ContainerListOptions{})
+		if err != nil {
+			continue
+		}
+		d.mountMapLock.Lock()
+		for _, container := range containers {
+			for _, mount := range container.Mounts {
+				if strings.HasPrefix(mount.Source, d.getMntRoot()) {
+					if ids, ok := d.mountMap[mount.Source]; ok {
+						ids[container.ID] = struct{}{}
+					} else {
+						d.mountMap[mount.Source] = map[string]struct{}{}
+						d.mountMap[mount.Source][container.ID] = struct{}{}
+					}
+				}
+			}
+		}
+		d.mountMapLock.Unlock()
+		time.Sleep(time.Minute * 1)
 	}
 }
