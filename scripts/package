@@ -26,6 +26,10 @@ chmod +x ../package/common/update-rancher-ssl
 
 for i in */Dockerfile; do
     BASE=$(dirname $i)
+    # disable efs
+    if [ ${BASE} == "efs" ]; then
+        continue
+    fi
     IMAGE=${REPO}/storage-${BASE}:${TAG}
     docker build -f $i -t ${IMAGE} .
     if [ "$BASE" != "example" ]; then
