@@ -20,7 +20,7 @@ mount_nfs() {
         if [ ! -z "$opts" ]; then
             cmd="$cmd -o $opts"
         fi
-        cmd="$cmd $host:$exportDir $mountDir"
+        cmd="$cmd $host:\"$exportDir\" $mountDir"
 
         error=`$cmd 2>&1`
         if [ $? -ne 0 ]; then
