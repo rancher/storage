@@ -31,7 +31,7 @@ const (
 	RancherUUID    = "rancher-uuid"
 	DefaultBasedir = "/var/lib/rancher/volumes"
 	DefaultFsType  = "ext4"
-	DefaultScope   = "global"
+	DefaultScope   = "flex"
 	state          = "state"
 )
 
