@@ -40,17 +40,6 @@ pipeline:
 
   publish-image:
     image: plugins/docker
-    dockerfile: package/example/Dockerfile
-    repo: rancher/storage-example
-    context: package/
-    tag: ${DRONE_TAG}
-    secrets: [docker_username, docker_password]
-    when:
-      branch: master
-      event: tag
-
-  publish-image:
-    image: plugins/docker
     dockerfile: package/longhorn/Dockerfile
     repo: rancher/storage-longhorn
     context: package/
