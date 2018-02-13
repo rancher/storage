@@ -7,3 +7,99 @@ pipeline:
     - /var/run/docker.sock:/var/run/docker.sock
     commands:
     - dapper ci
+
+  stage-binaries:
+    image: rancher/dapper:1.11.2
+    commands:
+    - ./scripts/ci-package-prep
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/abs/Dockerfile
+    repo: rancher/storage-abs
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/ebs/Dockerfile
+    repo: rancher/storage-ebs
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/example/Dockerfile
+    repo: rancher/storage-example
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/longhorn/Dockerfile
+    repo: rancher/storage-longhorn
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/nfs/Dockerfile
+    repo: rancher/storage-nfs
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/rbd/Dockerfile
+    repo: rancher/storage-rbd
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/secrets-bridge-v2/Dockerfile
+    repo: rancher/storage-secrets-bridge-v2
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/secrets/Dockerfile
+    repo: rancher/storage-secrets
+    context: package/
+    tag: ${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
