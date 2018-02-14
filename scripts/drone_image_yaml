@@ -3,8 +3,10 @@
 cd $(dirname $0)/../package
 
 generate_yaml() {
+# $1 is the docker file relative to package directory
+# $2 is the name of the dockerhub repo in the rancher org
 cat <<EOF
-  publish-image:
+  publish-image-${2}:
     image: plugins/docker
     dockerfile: package/${1}
     repo: rancher/${2}
@@ -20,7 +22,7 @@ EOF
 
 for i in */Dockerfile; do
   BASE=$(dirname $i)
-  if [ "${BASE}" = "efs" ]; then
+  if [ "${BASE}" = "efs" ] || [ "${BASE}" = "example" ] ; then
     continue
   fi
   generate_yaml $i storage-$BASE

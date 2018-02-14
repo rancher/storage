@@ -14,8 +14,11 @@ pipeline:
     - cp -r ./bin/storage ./package/
     - curl -sLf https://raw.githubusercontent.com/rancher/rancher/98660ada3d800f653fc1f105771b5173f9d1a019/server/bin/update-rancher-ssl > package/common/update-rancher-ssl
     - chmod +x package/common/update-rancher-ssl
+    when:
+      branch: master
+      event: tag
 
-  publish-image:
+  publish-image-storage-abs:
     image: plugins/docker
     dockerfile: package/abs/Dockerfile
     repo: rancher/storage-abs
@@ -26,7 +29,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-ebs:
     image: plugins/docker
     dockerfile: package/ebs/Dockerfile
     repo: rancher/storage-ebs
@@ -37,7 +40,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-longhorn:
     image: plugins/docker
     dockerfile: package/longhorn/Dockerfile
     repo: rancher/storage-longhorn
@@ -48,7 +51,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-nfs:
     image: plugins/docker
     dockerfile: package/nfs/Dockerfile
     repo: rancher/storage-nfs
@@ -59,7 +62,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-rbd:
     image: plugins/docker
     dockerfile: package/rbd/Dockerfile
     repo: rancher/storage-rbd
@@ -70,7 +73,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-secrets-bridge-v2:
     image: plugins/docker
     dockerfile: package/secrets-bridge-v2/Dockerfile
     repo: rancher/storage-secrets-bridge-v2
@@ -81,7 +84,7 @@ pipeline:
       branch: master
       event: tag
 
-  publish-image:
+  publish-image-storage-secrets:
     image: plugins/docker
     dockerfile: package/secrets/Dockerfile
     repo: rancher/storage-secrets
@@ -91,3 +94,4 @@ pipeline:
     when:
       branch: master
       event: tag
+
