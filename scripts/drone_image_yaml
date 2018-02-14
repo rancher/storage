@@ -1,0 +1,27 @@
+#!/bin/sh
+
+cd $(dirname $0)/../package
+
+generate_yaml() {
+cat <<EOF
+  publish-image:
+    image: plugins/docker
+    dockerfile: package/${1}
+    repo: rancher/${2}
+    context: package/
+    tag: \${DRONE_TAG}
+    secrets: [docker_username, docker_password]
+    when:
+      branch: master
+      event: tag
+
+EOF
+}
+
+for i in */Dockerfile; do
+  BASE=$(dirname $i)
+  if [ "${BASE}" = "efs" ]; then
+    continue
+  fi
+  generate_yaml $i storage-$BASE
+done
