@@ -10,14 +10,10 @@ pipeline:
 
   stage-binaries:
     image: rancher/dapper:1.11.2
-    privileged: true
-    volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
     commands:
-    - dapper ci-package-prep
-    when:
-      branch: master
-      event: tag
+    - cp -r ./bin/storage ./package/
+    - curl -sLf https://raw.githubusercontent.com/rancher/rancher/98660ada3d800f653fc1f105771b5173f9d1a019/server/bin/update-rancher-ssl > package/common/update-rancher-ssl
+    - chmod +x package/common/update-rancher-ssl
 
   publish-image:
     image: plugins/docker
