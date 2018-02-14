@@ -10,8 +10,11 @@ pipeline:
 
   stage-binaries:
     image: rancher/dapper:1.11.2
+    privileged: true
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
     commands:
-    - ./scripts/ci-package-prep
+    - dapper ci-package-prep
     when:
       branch: master
       event: tag
