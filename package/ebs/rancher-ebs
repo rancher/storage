@@ -207,6 +207,14 @@ create() {
 
 is_attached_dev() {
     # device to VOLUME_ID if attached
+    if [[ $1 =~ ^/dev/nvme.*$ ]]; then
+        VOLUME_ID=`nvme list | grep $1 | awk -F' ' '//{print $2}'`
+        if [ -z "${VOLUME_ID}" ]; then
+          return 1
+        fi
+        VOLUME_ID="vol-""${VOLUME_ID#vol}"
+        return 0
+    fi
     local aws_device_path=$1
     local attachments
     attachments=`aws ec2 describe-volumes --region ${EC2_REGION} --filters Name=attachment.instance-id,Values=${INSTANCE_ID} | jq -r '.Volumes[].Attachments[]'`
@@ -216,11 +224,10 @@ is_attached_dev() {
 
     VOLUME_ID=`echo ${attachments} | jq "select(.Device==\"${aws_device_path}\") | .VolumeId"`
     VOLUME_ID=`echo ${VOLUME_ID=} | sed -e 's/^"//' -e 's/"$//'`
-
     if [ -z "${VOLUME_ID}" ]; then
-        return 1
+      return 1
     else
-        return 0
+      return 0
     fi
 }
 
@@ -324,13 +331,17 @@ attach() {
 }
 
 detach() {
-    local aws_device_path="/dev/sd""${DEVICE: -1}"
 
     unset_aws_credentials_env
 
     get_meta_data
 
-    is_attached_dev $aws_device_path
+    if [[ $1 =~ ^/dev/nvme.*$ ]]; then 
+        is_attached_dev $DEVICE
+    else
+        local aws_device_path="/dev/sd""${DEVICE: -1}"
+        is_attached_dev $aws_device_path
+    fi
     if [ $? -eq 0 ]; then
         do_detach
     fi
