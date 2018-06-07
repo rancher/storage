@@ -35,7 +35,8 @@ wait_volume_transition() {
         print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state}"
     fi
     if [ $retriess -ge 10 ]; then
-        exit 2
+        print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state} after ${retries} retries"
+        return 2
     fi
 }
 
@@ -112,6 +113,19 @@ find_matching_linux_device_path() {
     done
 }
 
+find_matching_snapshot() {
+    local snapshots
+    snapshots=`aws ec2 describe-tags --region ${EC2_REGION} --filters "Name=resource-type,Values=snapshot" "Name=key,Values=${1}" "Name=value,Values=${2}" | jq -r '.Tags[].ResourceId'`
+    if [ $? -ne 0 ]; then
+        print_error "Failed to describe snapshot for tags ${1}. ${snapshots}"
+    fi
+    if [ $(echo "$snapshots" | wc -l) -ne 1 ]; then
+        # non-unique tag
+        print_error "Failed too many snapshots are tagged with ${1}. ${snapshots}"
+    fi
+    echo $snapshots
+}
+
 init()
 {
     print_success
@@ -146,10 +160,13 @@ create() {
         type_option="--volume-type ${type}"
     fi
 
-    local snapshot=${OPTS[snapshotID]}
+    local snapshot_tag=${OPTS[snapshotTag]}
+    local snapshot=""
     local snapshot_option=""
-    if [ ! -z "${snapshot}" ]; then
-        snapshot_option="--snapshot-id ${snapshot}"
+    local tag_name="Name"
+
+    if [ ! -z ${OPTS[snapshotTagName]} ]; then
+      tag_name=${OPTS[snapshotTagName]}
     fi
 
     local encrypted=${OPTS[encrypted]}
@@ -173,6 +190,16 @@ create() {
     unset_aws_credentials_env
 
     get_meta_data
+
+    if [ ! -z "${snapshot_tag}" ]; then
+        snapshot=$(find_matching_snapshot "$tag_name" "$snapshot_tag")
+    fi
+    if [ -z "${snapshot}" ]; then
+        snapshot=${OPTS[snapshotID]}
+    fi
+    if [ ! -z "${snapshot}" ]; then
+        snapshot_option="--snapshot-id ${snapshot}"
+    fi
 
     # create a EBS volume using aws-cli
     local volume
@@ -279,9 +306,10 @@ do_detach() {
     fi
     wait_volume_transition "in-use" "available"
     if [ $? -eq 2 ]; then
+        print_error "Attempting to detach ebs volume-id ${VOLUME_ID} by force."
         error=`aws ec2 detach-volume --force --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
-            print_error "Failed to detach ebs volume by force. ${error}"
+            print_error "Failed to detach ebs volume ${VOLUME_ID} by force. ${error}"
         fi
     fi
 }
