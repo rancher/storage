@@ -35,7 +35,7 @@ wait_volume_transition() {
         print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state}"
     fi
     if [ $retriess -ge 10 ]; then
-        print_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state} after ${retries} retries"
+        log_error "Failed volume ${VOLUME_ID} transition, expected end state is: ${end_state}, got ${current_state} after ${retries} retries"
         return 2
     fi
 }
@@ -306,7 +306,7 @@ do_detach() {
     fi
     wait_volume_transition "in-use" "available"
     if [ $? -eq 2 ]; then
-        print_error "Attempting to detach ebs volume-id ${VOLUME_ID} by force."
+        log_warn "Attempting to detach ebs volume-id ${VOLUME_ID} by force."
         error=`aws ec2 detach-volume --force --region ${EC2_REGION} --volume-id ${VOLUME_ID} 2>&1`
         if [ $? -ne 0 ]; then
             print_error "Failed to detach ebs volume ${VOLUME_ID} by force. ${error}"
