@@ -90,6 +90,12 @@ find_matching_linux_device_path() {
 
         local device_new_format="/dev/xvd""${1: -1}"
         local linux_device_path=`lsblk -o KNAME | sed -e 's/^/\/dev\//' | grep "${device_new_format}"`
+        if [ "$(wc -w <<< ${linux_device_path})" -gt 1 ]; then
+            local linux_device_array=(${linux_device_path})
+            echo ${linux_device_array[1]}
+            break
+        fi
+
         if [ "${linux_device_path}" == "${device_new_format}" ]; then
             echo ${linux_device_path}
             break
