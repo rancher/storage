@@ -46,7 +46,6 @@ unmount_nfs() {
 
 init() {
     rpcbind -f &>/dev/null &
-    validate
     print_success
 }
 

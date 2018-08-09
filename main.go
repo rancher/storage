@@ -121,6 +121,7 @@ func start(c *cli.Context) error {
 			logrus.Fatalf("Error while running healthcheck [%v]", err)
 		}()
 	}
+	go startValidation(d)
 	volumeplugin.ExtendHandler(h, d)
 	volumeplugin.ForceSymlinkInDockerPlugins(driverName)
 	return h.ServeUnix("root", volumeplugin.RancherSocketFile(driverName))

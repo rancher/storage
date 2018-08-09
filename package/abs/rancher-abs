@@ -199,6 +199,10 @@ init() {
     print_success
 }
 
+validate()
+{
+    print_success
+}
 
 # After container has been created with volumne driver "rancher-abs"
 # - # https://help.aliyun.com/document_detail/25513.html?spm=5176.doc25514.6.866.Ou38fP

@@ -89,6 +89,11 @@ func (d *RancherStorageDriver) init() error {
 	return err
 }
 
+func (d *RancherStorageDriver) Validate() error {
+	_, err := d.exec("validate")
+	return err
+}
+
 func (d *RancherStorageDriver) Create(request volume.Request) volume.Response {
 	// we need to lock the name to make create idempotency
 	if d.Rancher {
