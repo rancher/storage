@@ -114,13 +114,13 @@ find_matching_linux_device_path() {
 }
 
 find_matching_snapshot() {
-    local snapshots
-    snapshots=`aws ec2 describe-snapshots --region=${EC2_REGION} --filters "Name=tag:${1},Values=${2}" | jq -r '.Snapshots | sort_by(.startTime) | last | .SnapshotId'`
+    local snapshot
+    snapshot=`aws ec2 describe-snapshots --region=${EC2_REGION} --filters "Name=tag:${1},Values=${2}" | jq -r '.Snapshots | sort_by(.startTime) | last | .SnapshotId'`
     if [ $? -ne 0 ]; then
-        print_error "Failed to describe snapshot for tags ${1}. ${snapshots}"
+        print_error "Failed to describe snapshot for tags ${1}. ${snapshot}"
     fi
 
-    echo $snapshots
+    echo $snapshot
 }
 
 init()
