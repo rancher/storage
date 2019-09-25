@@ -1,7 +1,7 @@
 FROM ubuntu:16.04
 RUN apt-get update && \
     apt-get install -y jq python2.7 python-pip curl
-RUN pip install --upgrade pip && \
+RUN python -m pip install --force-reinstall pip && \
     pip install aliyun-python-sdk-ecs && \
     pip install aliyuncli
 COPY storage /usr/bin/
