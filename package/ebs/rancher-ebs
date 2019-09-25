@@ -191,6 +191,13 @@ create() {
 
     get_meta_data
 
+    # check if we have an available device path to mount
+    local device_path=$(find_available_device_path)
+    if [ "$device_path" == "" ]; then
+        print_error All device paths are in use for instance-id: ${INSTANCE_ID}
+    fi
+    
+
     if [ ! -z "${snapshot_tag}" ]; then
         snapshot=$(find_matching_snapshot "$tag_name" "$snapshot_tag")
     fi
