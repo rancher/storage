@@ -30,6 +30,10 @@ for i in */Dockerfile; do
     if [ ${BASE} == "efs" ]; then
         continue
     fi
+    # disable rbd
+    if [ ${BASE} == "rbd" ]; then
+        continue
+    fi
     IMAGE=${REPO}/storage-${BASE}:${TAG}
     docker build -f $i -t ${IMAGE} .
     if [ "$BASE" != "example" ]; then
